@@ -98,7 +98,7 @@
     </div>
 
     <div id="tab-pengaturan" class="tab-content">
-      <div class="info-box">⚙️ <b>Kustomisasi Nama</b><br>Nama akan tersimpan di browser HP Anda.</div>
+      <div class="info-box">⚙️ <b>Kustomisasi Nama</b><br>Nama disimpan di perangkat Wemos (Server).</div>
       <form onsubmit="saveCustomName(event)">
         <div class="form-group"><label>Nama Lampu 1:</label><input type="text" id="input-name-1" value="Lampu 1" required></div>
         <div class="form-group"><label>Nama Lampu 2:</label><input type="text" id="input-name-2" value="Lampu 2" required></div>
@@ -121,6 +121,7 @@
       document.getElementById('conn-status').className = 'conn-status conn-on';
       client.subscribe(BASE_TOPIC + '/state');
       client.subscribe(BASE_TOPIC + '/schedule');
+      client.subscribe(BASE_TOPIC + '/names');
     });
 
     client.on('error', function () {
@@ -143,6 +144,14 @@
         } catch(e) {}
       } else if (topic === BASE_TOPIC + '/schedule') {
         loadSchedulesUI(msg);
+      } else if (topic === BASE_TOPIC + '/names') {
+        try {
+          let data = JSON.parse(msg);
+          if(data.n1) { document.getElementById('input-name-1').value = data.n1; document.getElementById('title-1').innerText = data.n1; }
+          if(data.n2) { document.getElementById('input-name-2').value = data.n2; document.getElementById('title-2').innerText = data.n2; }
+          if(data.n3) { document.getElementById('input-name-3').value = data.n3; document.getElementById('title-3').innerText = data.n3; }
+          if(data.n4) { document.getElementById('input-name-4').value = data.n4; document.getElementById('title-4').innerText = data.n4; }
+        } catch(e) {}
       }
     });
 
@@ -218,32 +227,13 @@
 
     function saveCustomName(event) {
       event.preventDefault();
-      let name1 = document.getElementById('input-name-1').value;
-      let name2 = document.getElementById('input-name-2').value;
-      let name3 = document.getElementById('input-name-3').value;
-      let name4 = document.getElementById('input-name-4').value;
-      localStorage.setItem('custom_name_1', name1);
-      localStorage.setItem('custom_name_2', name2);
-      localStorage.setItem('custom_name_3', name3);
-      localStorage.setItem('custom_name_4', name4);
-      document.getElementById('title-1').innerText = name1;
-      document.getElementById('title-2').innerText = name2;
-      document.getElementById('title-3').innerText = name3;
-      document.getElementById('title-4').innerText = name4;
-      alert('Nama berhasil disimpan!');
+      for(let i=1; i<=4; i++) {
+        let name = document.getElementById('input-name-'+i).value;
+        client.publish(BASE_TOPIC + '/name_cmd', 'set:' + i + ':' + name);
+      }
+      alert('Nama dikirim ke perangkat!');
       switchTab('control');
     }
-
-    window.onload = function() {
-      let savedName1 = localStorage.getItem('custom_name_1');
-      let savedName2 = localStorage.getItem('custom_name_2');
-      let savedName3 = localStorage.getItem('custom_name_3');
-      let savedName4 = localStorage.getItem('custom_name_4');
-      if(savedName1) { document.getElementById('input-name-1').value = savedName1; document.getElementById('title-1').innerText = savedName1; }
-      if(savedName2) { document.getElementById('input-name-2').value = savedName2; document.getElementById('title-2').innerText = savedName2; }
-      if(savedName3) { document.getElementById('input-name-3').value = savedName3; document.getElementById('title-3').innerText = savedName3; }
-      if(savedName4) { document.getElementById('input-name-4').value = savedName4; document.getElementById('title-4').innerText = savedName4; }
-    };
   </script>
 </body>
 </html>
