@@ -102,7 +102,7 @@
     </div>
 
     <div id="tab-pengaturan" class="tab-content">
-      <div class="info-box">⚙️ <b>Kustomisasi Nama</b><br>Nama akan tersimpan di browser HP Anda.</div>
+      <div class="info-box">⚙️ <b>Kustomisasi Nama</b><br>Nama disimpan di perangkat Wemos (Server).</div>
       <form onsubmit="saveCustomName(event)">
         <div class="form-group"><label>Nama Lampu 1:</label><input type="text" id="input-name-1" value="Lampu 1" required></div>
         <div class="form-group"><label>Nama Lampu 2:</label><input type="text" id="input-name-2" value="Lampu 2" required></div>
@@ -129,6 +129,7 @@
       document.getElementById('conn-status').className = 'conn-status conn-on';
       client.subscribe(BASE_TOPIC + '/state');
       client.subscribe(BASE_TOPIC + '/schedule');
+      client.subscribe(BASE_TOPIC + '/names');
     });
 
     client.on('error', function () {
@@ -152,6 +153,18 @@
         } catch(e) {}
       } else if (topic === BASE_TOPIC + '/schedule') {
         loadSchedulesUI(msg);
+      } else if (topic === BASE_TOPIC + '/names') {
+        try {
+          let data = JSON.parse(msg);
+          if(data.n1) { document.getElementById('input-name-1').value = data.n1; document.getElementById('title-1').innerText = data.n1; }
+          if(data.n2) { document.getElementById('input-name-2').value = data.n2; document.getElementById('title-2').innerText = data.n2; }
+          if(data.n3) { document.getElementById('input-name-3').value = data.n3; document.getElementById('title-3').innerText = data.n3; }
+          if(data.n4) { document.getElementById('input-name-4').value = data.n4; document.getElementById('title-4').innerText = data.n4; }
+          if(data.n5) { document.getElementById('input-name-5').value = data.n5; document.getElementById('title-5').innerText = data.n5; }
+          if(data.n6) { document.getElementById('input-name-6').value = data.n6; document.getElementById('title-6').innerText = data.n6; }
+          if(data.n7) { document.getElementById('input-name-7').value = data.n7; document.getElementById('title-7').innerText = data.n7; }
+          if(data.n8) { document.getElementById('input-name-8').value = data.n8; document.getElementById('title-8').innerText = data.n8; }
+        } catch(e) {}
       }
     });
 
@@ -229,22 +242,11 @@
       event.preventDefault();
       for(let i=1; i<=8; i++) {
         let name = document.getElementById('input-name-'+i).value;
-        localStorage.setItem('custom_name_'+i, name);
-        document.getElementById('title-'+i).innerText = name;
+        client.publish(BASE_TOPIC + '/name_cmd', 'set:' + i + ':' + name);
       }
-      alert('Nama berhasil disimpan!');
+      alert('Nama dikirim ke perangkat!');
       switchTab('control');
     }
-
-    window.onload = function() {
-      for(let i=1; i<=8; i++) {
-        let savedName = localStorage.getItem('custom_name_'+i);
-        if(savedName) { 
-          document.getElementById('input-name-'+i).value = savedName; 
-          document.getElementById('title-'+i).innerText = savedName; 
-        }
-      }
-    };
   </script>
 </body>
 </html>
