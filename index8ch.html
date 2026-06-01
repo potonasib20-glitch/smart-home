@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home Control</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root { --bg-color: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8; --accent-on: #22c55e; --accent-off: #475569; --accent-glow: #16a34a; --danger: #ef4444; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; min-height: 100vh; padding: 20px; }
+    .container { width: 100%; max-width: 450px; }
+    .glow-title { display: block; text-align: center; background: rgba(14,98,194,0.1); color: #fff; padding: 20px; margin-bottom: 0px; font-size: 2.2rem; letter-spacing: 2px; text-transform: uppercase; border: 1px solid #0e62c2; box-shadow: 0 0 15px rgba(14,98,194,0.2); text-shadow: 0 0 10px #0e62c2; }
+    .info-section { padding: 10px; background: var(--card-bg); border: 1px solid #334155; font-size: 0.85rem; color: #94a3b8; text-align: center; margin-bottom: 20px; }
+    .nav { display: flex; background: var(--card-bg); border-radius: 16px; margin-bottom: 20px; overflow: hidden; border: 1px solid #334155; flex-wrap: wrap; }
+    .nav-btn { flex: 1; padding: 12px 5px; background: transparent; border: none; color: var(--text-muted); font-weight: 600; cursor: pointer; transition: 0.3s; font-size: 12px; }
+    .nav-btn.active { background: #334155; color: var(--text-main); box-shadow: inset 0 -3px 0 var(--accent-on); }
+    .tab-content { display: none; } .tab-content.active { display: block; animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .clock-display { text-align: center; font-size: 24px; font-weight: bold; color: var(--accent-on); margin-bottom: 20px; }
+    .status-bar { display: flex; background: var(--card-bg); padding: 15px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #334155; justify-content: space-around; }
+    .status-item .value { font-size: 20px; font-weight: bold; color: var(--accent-on); text-align: center;}
+    .status-item .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-top: 4px;}
+    .card { background: var(--card-bg); border-radius: 20px; padding: 20px; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #334155; transition: 0.3s; }
+    .card:hover { border-color: #475569; }
+    .card-info { display: flex; align-items: center; gap: 15px; }
+    .icon-box { width: 50px; height: 50px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; background: #334155; transition: 0.3s; }
+    .card.active .icon-box { background: var(--accent-on); box-shadow: 0 0 15px var(--accent-glow); }
+    .details h2 { font-size: 18px; font-weight: 500; } .details p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .switch { position: relative; display: inline-block; width: 56px; height: 30px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .4s; border-radius: 30px; }
+    .slider:before { position: absolute; content: ""; height: 24px; width: 24px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    input:checked + .slider { background-color: var(--accent-on); }
+    input:checked + .slider:before { transform: translateX(26px); }
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+    .action-btn { padding: 15px 0; border: none; border-radius: 12px; font-weight: bold; font-size: 14px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: 0.3s; }
+    .btn-allon { background: var(--accent-on); color: #000; } .btn-allon:hover { background: var(--accent-glow); }
+    .btn-alloff { background: var(--danger); color: #fff; } .btn-alloff:hover { background: #dc2626; }
+    .btn-timer { background: #3b82f6; color: #fff; } .btn-timer:hover { background: #2563eb; }
+    .btn-schedule { background: #8b5cf6; color: #fff; } .btn-schedule:hover { background: #7c3aed; }
+    .form-group { margin-bottom: 20px; text-align: left; }
+    .form-group label { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 14px; }
+    .form-group input, .form-group select { width: 100%; padding: 12px; background: rgba(10,15,20,0.7); border: 1px solid #334155; border-radius: 10px; color: var(--text-main); font-size: 16px; }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent-on); outline: none; }
+    .btn-submit { width: 100%; padding: 15px; background: var(--accent-on); color: #000; border: none; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.3s; }
+    .btn-submit:hover { background: var(--accent-glow); }
+    .info-box { background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 20px; font-size: 13px; color: var(--text-muted); }
+    .schedule-item { background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .schedule-item .sch-time { font-size: 20px; font-weight: bold; color: var(--accent-on); }
+    .schedule-item .sch-info { font-size: 12px; color: var(--text-muted); }
+    .btn-del { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+    .conn-status { text-align: center; padding: 5px; font-size: 12px; margin-bottom: 15px; border-radius: 8px; }
+    .conn-on { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .conn-off { background: rgba(239,68,68,0.2); color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="glow-title">⚡ SMART HOME</h1>
+    <div class="info-section"><p>MAC: <span id="mac-address">CLOUD MODE</span></p></div>
+    <div id="conn-status" class="conn-status conn-off">MQTT: DISCONNECTED</div>
+    <div class="clock-display" id="live-clock">--:--:--</div>
+    <div class="nav">
+      <button class="nav-btn active" onclick="switchTab('control')">KONTROL</button>
+      <button class="nav-btn" onclick="switchTab('jadwal')">JADWAL</button>
+      <button class="nav-btn" onclick="switchTab('pengaturan')">PENGATURAN</button>
+    </div>
+
+    <div id="tab-control" class="tab-content active">
+      <div class="status-bar">
+        <div class="status-item"><div class="value" id="active-count">0</div><div class="label">Lampu Nyala</div></div>
+        <div class="status-item"><div class="value" id="inactive-count">8</div><div class="label">Lampu Mati</div></div>
+      </div>
+      <div class="card" id="card-1"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-1">Lampu 1</h2><p id="status-1">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(1, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-2"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-2">Lampu 2</h2><p id="status-2">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(2, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-3"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-3">Lampu 3</h2><p id="status-3">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(3, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-4"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-4">Lampu 4</h2><p id="status-4">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(4, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-5"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-5">Lampu 5</h2><p id="status-5">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(5, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-6"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-6">Lampu 6</h2><p id="status-6">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(6, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-7"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-7">Lampu 7</h2><p id="status-7">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(7, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-8"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-8">Lampu 8</h2><p id="status-8">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(8, this.checked)"><span class="slider"></span></label></div>
+      
+      <div class="action-grid">
+        <button class="action-btn btn-allon" onclick="setAll(1)">ALL ON</button>
+        <button class="action-btn btn-alloff" onclick="setAll(0)">ALL OFF</button>
+        <button class="action-btn btn-timer" id="btn-timer" onclick="setTimer()">TIMER</button>
+        <button class="action-btn btn-schedule" onclick="switchTab('jadwal')">JADWAL</button>
+      </div>
+    </div>
+
+    <div id="tab-jadwal" class="tab-content">
+      <div class="info-box">⏰ <b>Jadwal Otomatis (Disinkronkan NTP)</b></div>
+      <form onsubmit="saveSchedule(event)">
+        <div class="form-group"><label>Pilih Lampu:</label><select id="sch-relay"><option value="0">Semua Lampu</option><option value="1">Lampu 1</option><option value="2">Lampu 2</option><option value="3">Lampu 3</option><option value="4">Lampu 4</option><option value="5">Lampu 5</option><option value="6">Lampu 6</option><option value="7">Lampu 7</option><option value="8">Lampu 8</option></select></div>
+        <div class="form-group"><label>Aksi:</label><select id="sch-state"><option value="1">NYALAKAN</option><option value="0">MATIKAN</option></select></div>
+        <div class="form-group"><label>Waktu (Jam:Menit):</label><input type="time" id="sch-time" required></div>
+        <button type="submit" class="btn-submit">TAMBAH JADWAL</button>
+      </form>
+      <hr style="border-color:#334155; margin: 20px 0;">
+      <div id="schedule-list"></div>
+    </div>
+
+    <div id="tab-pengaturan" class="tab-content">
+      <div class="info-box">⚙️ <b>Kustomisasi Nama</b><br>Nama akan tersimpan di browser HP Anda.</div>
+      <form onsubmit="saveCustomName(event)">
+        <div class="form-group"><label>Nama Lampu 1:</label><input type="text" id="input-name-1" value="Lampu 1" required></div>
+        <div class="form-group"><label>Nama Lampu 2:</label><input type="text" id="input-name-2" value="Lampu 2" required></div>
+        <div class="form-group"><label>Nama Lampu 3:</label><input type="text" id="input-name-3" value="Lampu 3" required></div>
+        <div class="form-group"><label>Nama Lampu 4:</label><input type="text" id="input-name-4" value="Lampu 4" required></div>
+        <div class="form-group"><label>Nama Lampu 5:</label><input type="text" id="input-name-5" value="Lampu 5" required></div>
+        <div class="form-group"><label>Nama Lampu 6:</label><input type="text" id="input-name-6" value="Lampu 6" required></div>
+        <div class="form-group"><label>Nama Lampu 7:</label><input type="text" id="input-name-7" value="Lampu 7" required></div>
+        <div class="form-group"><label>Nama Lampu 8:</label><input type="text" id="input-name-8" value="Lampu 8" required></div>
+        <button type="submit" class="btn-submit">SIMPAN PENGATURAN</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const BASE_TOPIC = 'smarthome/device04';
+    
+    let client = mqtt.connect(BROKER_URL, { clientId: 'web_' + Math.random().toString(16).substr(2, 8), clean: true });
+    let timerInterval = null;
+
+    client.on('connect', function () {
+      document.getElementById('conn-status').innerHTML = 'MQTT: CONNECTED';
+      document.getElementById('conn-status').className = 'conn-status conn-on';
+      client.subscribe(BASE_TOPIC + '/state');
+      client.subscribe(BASE_TOPIC + '/schedule');
+    });
+
+    client.on('error', function () {
+      document.getElementById('conn-status').innerHTML = 'MQTT: ERROR';
+      document.getElementById('conn-status').className = 'conn-status conn-off';
+    });
+
+    client.on('close', function () {
+      document.getElementById('conn-status').innerHTML = 'MQTT: DISCONNECTED';
+      document.getElementById('conn-status').className = 'conn-status conn-off';
+    });
+
+    client.on('message', function (topic, message) {
+      let msg = message.toString();
+      if (topic === BASE_TOPIC + '/state') {
+        try {
+          let data = JSON.parse(msg);
+          updateSwitch(1, data.s1); updateSwitch(2, data.s2); updateSwitch(3, data.s3); updateSwitch(4, data.s4);
+          updateSwitch(5, data.s5); updateSwitch(6, data.s6); updateSwitch(7, data.s7); updateSwitch(8, data.s8);
+          updateCounts();
+        } catch(e) {}
+      } else if (topic === BASE_TOPIC + '/schedule') {
+        loadSchedulesUI(msg);
+      }
+    });
+
+    function updateClock() {
+      let now = new Date();
+      let h=now.getHours(); let m=now.getMinutes(); let s=now.getSeconds();
+      document.getElementById('live-clock').innerText = (h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    function switchTab(id) {
+      document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(e => e.classList.remove('active'));
+      document.getElementById('tab-' + id).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    function toggleRelay(relay, state) { client.publish(BASE_TOPIC + '/cmd', 'r' + relay + '=' + (state ? 1 : 0)); }
+    function setAll(state) { client.publish(BASE_TOPIC + '/cmd', 'all=' + state); }
+
+    function setTimer() {
+      let mins = prompt("Masukkan waktu timer (menit):", "");
+      if (mins !== null && mins > 0) {
+        client.publish(BASE_TOPIC + '/cmd', 'timer=' + mins);
+        let remainingSeconds = mins * 60;
+        let timerBtn = document.getElementById('btn-timer');
+        if(timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(function() {
+          remainingSeconds--;
+          if (remainingSeconds <= 0) {
+            clearInterval(timerInterval); timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = '';
+          } else {
+            let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60;
+            timerBtn.innerText = 'TIMER (' + (m<10?'0':'')+m+':'+(s<10?'0':'')+s+')'; timerBtn.style.backgroundColor = '#f97316';
+          }
+        }, 1000);
+      }
+    }
+
+    function saveSchedule(event) {
+      event.preventDefault();
+      let r=document.getElementById('sch-relay').value; let s=document.getElementById('sch-state').value;
+      let t=document.getElementById('sch-time').value; if(!t)return;
+      let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+p[0]+':'+p[1]);
+      alert('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
+    }
+
+    function deleteSchedule(id) { client.publish(BASE_TOPIC+'/sch_cmd', 'del:'+id); }
+
+    function loadSchedulesUI(data) {
+      let list=document.getElementById('schedule-list'); list.innerHTML='';
+      try {
+        let sch=JSON.parse(data); if(!sch||sch.length===0){list.innerHTML='<p style="text-align:center;color:#94a3b8;">Belum ada jadwal.</p>';return;}
+        sch.forEach(s => {
+          let rn=s.relay==0?'Semua':'Lampu '+s.relay; let sn=s.state==1?'NYALA':'MATI'; let sc=s.state==1?'#22c55e':'#ef4444';
+          let ts=(s.hour<10?'0':'')+s.hour+':'+(s.minute<10?'0':'')+s.minute;
+          list.innerHTML+=`<div class="schedule-item"><div><div class="sch-time">${ts}</div><div class="sch-info">${rn} <span style="color:${sc};font-weight:bold;">${sn}</span></div></div><button class="btn-del" onclick="deleteSchedule(${s.id})">HAPUS</button></div>`;
+        });
+      } catch(e){ list.innerHTML='<p style="text-align:center;color:#94a3b8;">Gagal memuat jadwal.</p>'; }
+    }
+
+    function updateSwitch(relay, state) {
+      let card=document.getElementById('card-'+relay); let statusText=document.getElementById('status-'+relay); let switchInput=card.querySelector('input[type=checkbox]');
+      if(state==1){card.classList.add('active');statusText.innerText='Status: Nyala';statusText.style.color='#22c55e';switchInput.checked=true;}
+      else{card.classList.remove('active');statusText.innerText='Status: Mati';statusText.style.color='#94a3b8';switchInput.checked=false;}
+    }
+
+    function updateCounts() {
+      let active=document.querySelectorAll('.card.active').length;
+      document.getElementById('active-count').innerText=active;
+      document.getElementById('inactive-count').innerText=8-active;
+    }
+
+    function saveCustomName(event) {
+      event.preventDefault();
+      for(let i=1; i<=8; i++) {
+        let name = document.getElementById('input-name-'+i).value;
+        localStorage.setItem('custom_name_'+i, name);
+        document.getElementById('title-'+i).innerText = name;
+      }
+      alert('Nama berhasil disimpan!');
+      switchTab('control');
+    }
+
+    window.onload = function() {
+      for(let i=1; i<=8; i++) {
+        let savedName = localStorage.getItem('custom_name_'+i);
+        if(savedName) { 
+          document.getElementById('input-name-'+i).value = savedName; 
+          document.getElementById('title-'+i).innerText = savedName; 
+        }
+      }
+    };
+  </script>
+</body>
+</html>
