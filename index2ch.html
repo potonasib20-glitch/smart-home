@@ -13,7 +13,7 @@
     .glow-title { display: block; text-align: center; background: rgba(14,98,194,0.1); color: #fff; padding: 20px; margin-bottom: 0px; font-size: 2.2rem; letter-spacing: 2px; text-transform: uppercase; border: 1px solid #0e62c2; box-shadow: 0 0 15px rgba(14,98,194,0.2); text-shadow: 0 0 10px #0e62c2; }
     .info-section { padding: 10px; background: var(--card-bg); border: 1px solid #334155; font-size: 0.85rem; color: #94a3b8; text-align: center; margin-bottom: 20px; }
     .nav { display: flex; background: var(--card-bg); border-radius: 16px; margin-bottom: 20px; overflow: hidden; border: 1px solid #334155; flex-wrap: wrap; }
-    .nav-btn { flex: 1 0 21%; padding: 12px 5px; background: transparent; border: none; color: var(--text-muted); font-weight: 600; cursor: pointer; transition: 0.3s; font-size: 12px; min-width: 70px; }
+    .nav-btn { flex: 1; padding: 12px 5px; background: transparent; border: none; color: var(--text-muted); font-weight: 600; cursor: pointer; transition: 0.3s; font-size: 12px; }
     .nav-btn.active { background: #334155; color: var(--text-main); box-shadow: inset 0 -3px 0 var(--accent-on); }
     .tab-content { display: none; } .tab-content.active { display: block; animation: fadeIn 0.3s; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -64,6 +64,7 @@
     <div class="nav">
       <button class="nav-btn active" onclick="switchTab('control')">KONTROL</button>
       <button class="nav-btn" onclick="switchTab('jadwal')">JADWAL</button>
+      <button class="nav-btn" onclick="switchTab('pengaturan')">PENGATURAN</button>
     </div>
 
     <div id="tab-control" class="tab-content active">
@@ -71,8 +72,8 @@
         <div class="status-item"><div class="value" id="active-count">0</div><div class="label">Lampu Nyala</div></div>
         <div class="status-item"><div class="value" id="inactive-count">2</div><div class="label">Lampu Mati</div></div>
       </div>
-      <div class="card" id="card-1"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2>Lampu 1</h2><p id="status-1">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(1, this.checked)"><span class="slider"></span></label></div>
-      <div class="card" id="card-2"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2>Lampu 2</h2><p id="status-2">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(2, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-1"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-1">Lampu 1</h2><p id="status-1">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(1, this.checked)"><span class="slider"></span></label></div>
+      <div class="card" id="card-2"><div class="card-info"><div class="icon-box">💡</div><div class="details"><h2 id="title-2">Lampu 2</h2><p id="status-2">Status: Mati</p></div></div><label class="switch"><input type="checkbox" onchange="toggleRelay(2, this.checked)"><span class="slider"></span></label></div>
       
       <div class="action-grid">
         <button class="action-btn btn-allon" onclick="setAll(1)">ALL ON</button>
@@ -92,6 +93,15 @@
       </form>
       <hr style="border-color:#334155; margin: 20px 0;">
       <div id="schedule-list"></div>
+    </div>
+
+    <div id="tab-pengaturan" class="tab-content">
+      <div class="info-box">⚙️ <b>Kustomisasi Nama</b><br>Nama akan tersimpan di browser HP Anda.</div>
+      <form onsubmit="saveCustomName(event)">
+        <div class="form-group"><label>Nama Lampu 1:</label><input type="text" id="input-name-1" value="Lampu 1" required></div>
+        <div class="form-group"><label>Nama Lampu 2:</label><input type="text" id="input-name-2" value="Lampu 2" required></div>
+        <button type="submit" class="btn-submit">SIMPAN PENGATURAN</button>
+      </form>
     </div>
   </div>
 
@@ -201,6 +211,25 @@
       document.getElementById('active-count').innerText=active;
       document.getElementById('inactive-count').innerText=2-active;
     }
+
+    function saveCustomName(event) {
+      event.preventDefault();
+      let name1 = document.getElementById('input-name-1').value;
+      let name2 = document.getElementById('input-name-2').value;
+      localStorage.setItem('custom_name_1', name1);
+      localStorage.setItem('custom_name_2', name2);
+      document.getElementById('title-1').innerText = name1;
+      document.getElementById('title-2').innerText = name2;
+      alert('Nama berhasil disimpan!');
+      switchTab('control');
+    }
+
+    window.onload = function() {
+      let savedName1 = localStorage.getItem('custom_name_1');
+      let savedName2 = localStorage.getItem('custom_name_2');
+      if(savedName1) { document.getElementById('input-name-1').value = savedName1; document.getElementById('title-1').innerText = savedName1; }
+      if(savedName2) { document.getElementById('input-name-2').value = savedName2; document.getElementById('title-2').innerText = savedName2; }
+    };
   </script>
 </body>
 </html>
