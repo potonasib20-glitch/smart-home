@@ -85,7 +85,7 @@
 
     <div id="tab-jadwal" class="tab-content">
       <div class="info-box">⏰ <b> PENGATURAN JADWAL</b></div>
-      <form onsubmit="return saveSchedule(event)">
+      <form onsubmit="saveSchedule(event)">
         <div class="form-group"><label>Pilih Lampu:</label><select id="sch-relay"><option value="0">Semua Lampu</option><option value="1">Lampu 1</option><option value="2">Lampu 2</option></select></div>
         <div class="form-group"><label>Aksi:</label><select id="sch-state"><option value="1">NYALAKAN</option><option value="0">MATIKAN</option></select></div>
         <div class="form-group"><label>Waktu (Jam:Menit):</label><input type="time" id="sch-time" required></div>
@@ -97,7 +97,7 @@
 
     <div id="tab-pengaturan" class="tab-content">
       <div class="info-box">⚙️ <b>Kustom Nama</b><br>Atur Nama Perangkat Di Halaman Dashboard</div>
-      <form onsubmit="return saveCustomName(event)">
+      <form onsubmit="saveCustomName(event)">
         <div class="form-group"><label>Nama Lampu 1:</label><input type="text" id="input-name-1" value="Lampu 1" required></div>
         <div class="form-group"><label>Nama Lampu 2:</label><input type="text" id="input-name-2" value="Lampu 2" required></div>
         <button type="submit" class="btn-submit">SIMPAN PENGATURAN</button>
@@ -161,7 +161,7 @@
       document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
       document.querySelectorAll('.nav-btn').forEach(e => e.classList.remove('active'));
       document.getElementById('tab-' + id).classList.add('active');
-      if(event && event.target) event.target.classList.add('active'); // DITAMBAH KEAMANAN
+      event.target.classList.add('active');
     }
 
     function toggleRelay(relay, state) { client.publish(BASE_TOPIC + '/cmd', 'r' + relay + '=' + (state ? 1 : 0)); }
@@ -189,10 +189,9 @@
     function saveSchedule(event) {
       event.preventDefault();
       let r=document.getElementById('sch-relay').value; let s=document.getElementById('sch-state').value;
-      let t=document.getElementById('sch-time').value; if(!t) return false;
+      let t=document.getElementById('sch-time').value; if(!t)return;
       let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+p[0]+':'+p[1]);
       alert('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
-      return false; // TAMBAHKAN INI
     }
 
     function deleteSchedule(id) { client.publish(BASE_TOPIC+'/sch_cmd', 'del:'+id); }
@@ -229,8 +228,7 @@
       client.publish(BASE_TOPIC + '/name_cmd', 'set:2:' + name2);
       alert('Nama dikirim ke perangkat!');
       switchTab('control');
-      return false; // TAMBAHKAN INI
     }
   </script>
 </body>
-</html>
+</html> 
