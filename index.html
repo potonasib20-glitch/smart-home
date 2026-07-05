@@ -97,6 +97,7 @@
       <form onsubmit="saveSchedule(event)">
         <div class="form-group"><label>Pilih Lampu:</label><select id="sch-relay"><option value="0">Semua Lampu</option><option value="1">Lampu 1</option><option value="2">Lampu 2</option><option value="3">Lampu 3</option><option value="4">Lampu 4</option></select></div>
         <div class="form-group"><label>Aksi:</label><select id="sch-state"><option value="1">NYALAKAN</option><option value="0">MATIKAN</option></select></div>
+        <div class="form-group"><label>Hari:</label><select id="sch-day"><option value="0">Minggu</option><option value="1" selected>Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option></select></div>
         <div class="form-group"><label>Waktu (Jam:Menit):</label><input type="time" id="sch-time" required></div>
         <button type="submit" class="btn-submit">TAMBAH JADWAL</button>
       </form>
@@ -225,8 +226,9 @@ function submitTimer() {
     function saveSchedule(event) {
       event.preventDefault();
       let r=document.getElementById('sch-relay').value; let s=document.getElementById('sch-state').value;
+      let d=document.getElementById('sch-day').value;
       let t=document.getElementById('sch-time').value; if(!t)return;
-      let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+p[0]+':'+p[1]);
+      let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]);
       showInfo('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
     }
 
@@ -234,12 +236,13 @@ function submitTimer() {
 
     function loadSchedulesUI(data) {
       let list=document.getElementById('schedule-list'); list.innerHTML='';
+      let days=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
       try {
         let sch=JSON.parse(data); if(!sch||sch.length===0){list.innerHTML='<p style="text-align:center;color:#94a3b8;">Belum ada jadwal.</p>';return;}
         sch.forEach(s => {
           let rn=s.relay==0?'Semua':'Lampu '+s.relay; let sn=s.state==1?'NYALA':'MATI'; let sc=s.state==1?'#22c55e':'#ef4444';
           let ts=(s.hour<10?'0':'')+s.hour+':'+(s.minute<10?'0':'')+s.minute;
-          list.innerHTML+=`<div class="schedule-item"><div><div class="sch-time">${ts}</div><div class="sch-info">${rn} <span style="color:${sc};font-weight:bold;">${sn}</span></div></div><button class="btn-del" onclick="deleteSchedule(${s.id})">HAPUS</button></div>`;
+          list.innerHTML+=`<div class="schedule-item"><div><div class="sch-time">${days[s.day]} ${ts}</div><div class="sch-info">${rn} <span style="color:${sc};font-weight:bold;">${sn}</span></div></div><button class="btn-del" onclick="deleteSchedule(${s.id})">HAPUS</button></div>`;
         });
       } catch(e){ list.innerHTML='<p style="text-align:center;color:#94a3b8;">Gagal memuat jadwal.</p>'; }
     }
