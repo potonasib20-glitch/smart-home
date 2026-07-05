@@ -115,6 +115,7 @@
         <button type="submit" class="btn-submit">SIMPAN PENGATURAN</button>
       </form>
     </div>
+    
     <div id="modal-timer" class="modal-overlay">
       <div class="modal-box">
         <h3>⏱️ Masukkan Waktu Timer</h3>
@@ -135,7 +136,7 @@
 
   <script>
     const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
-        const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = new URLSearchParams(window.location.search);
     const BASE_TOPIC = urlParams.get('topic') || 'smarthome/device01';
     
     let client = mqtt.connect(BROKER_URL, { clientId: 'web_' + Math.random().toString(16).substr(2, 8), clean: true });
@@ -198,12 +199,12 @@
     function setAll(state) { client.publish(BASE_TOPIC + '/cmd', 'all=' + state); }
 
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-function showInfo(text) { document.getElementById('modal-info-text').innerText = text; openModal('modal-info'); }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function showInfo(text) { document.getElementById('modal-info-text').innerText = text; openModal('modal-info'); }
 
-function setTimer() { openModal('modal-timer'); document.getElementById('timer-input').value = ''; document.getElementById('timer-input').focus(); }
+    function setTimer() { openModal('modal-timer'); document.getElementById('timer-input').value = ''; document.getElementById('timer-input').focus(); }
 
-function submitTimer() {
+    function submitTimer() {
       let mins = parseInt(document.getElementById('timer-input').value);
       if (!isNaN(mins) && mins > 0) {
         closeModal('modal-timer');
@@ -213,12 +214,8 @@ function submitTimer() {
         if(timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(function() {
           remainingSeconds--;
-          if (remainingSeconds <= 0) {
-            clearInterval(timerInterval); timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = '';
-          } else {
-            let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60;
-            timerBtn.innerText = 'TIMER (' + (m<10?'0':'')+m+':'+(s<10?'0':'')+s+')'; timerBtn.style.backgroundColor = '#f97316';
-          }
+          if (remainingSeconds <= 0) { clearInterval(timerInterval); timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = ''; }
+          else { let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60; timerBtn.innerText = 'TIMER ('+(m<10?'0':'')+m+':'+(s<10?'0':'')+s+')'; timerBtn.style.backgroundColor = '#f97316'; }
         }, 1000);
       }
     }
@@ -259,12 +256,9 @@ function submitTimer() {
       document.getElementById('inactive-count').innerText=4-active;
     }
 
-function saveCustomName(event) {
+    function saveCustomName(event) {
       event.preventDefault();
-      for(let i=1; i<=4; i++) {
-        let name = document.getElementById('input-name-'+i).value;
-        client.publish(BASE_TOPIC + '/name_cmd', 'set:' + i + ':' + name);
-      }
+      for(let i=1; i<=4; i++) { let name = document.getElementById('input-name-'+i).value; client.publish(BASE_TOPIC + '/name_cmd', 'set:' + i + ':' + name); }
       showInfo('Nama dikirim ke perangkat!');
       switchTab('control');
     }
