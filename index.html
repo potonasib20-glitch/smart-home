@@ -53,6 +53,13 @@
     .conn-status { text-align: center; padding: 5px; font-size: 12px; margin-bottom: 15px; border-radius: 8px; }
     .conn-on { background: rgba(34,197,94,0.2); color: #22c55e; }
     .conn-off { background: rgba(239,68,68,0.2); color: #ef4444; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-box { background: var(--card-bg); padding: 25px; border-radius: 16px; border: 1px solid #334155; width: 90%; max-width: 350px; text-align: center; }
+    .modal-box input { width: 100%; padding: 12px; margin: 15px 0; background: var(--bg-color); border: 1px solid #334155; border-radius: 10px; color: var(--text-main); font-size: 16px; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+    .modal-btn-cancel { background: #475569; color: #fff; }
+    .modal-btn-ok { background: var(--accent-on); color: #000; }
   </style>
 </head>
 <body>
@@ -106,6 +113,22 @@
         <div class="form-group"><label>Nama Lampu 4:</label><input type="text" id="input-name-4" value="Lampu 4" required></div>
         <button type="submit" class="btn-submit">SIMPAN PENGATURAN</button>
       </form>
+    </div>
+    <div id="modal-timer" class="modal-overlay">
+      <div class="modal-box">
+        <h3>⏱️ Masukkan Waktu Timer</h3>
+        <input type="number" id="timer-input" placeholder="Waktu (menit)" min="1">
+        <div class="modal-actions">
+          <button class="modal-btn-cancel" onclick="closeModal('modal-timer')">BATAL</button>
+          <button class="modal-btn-ok" onclick="submitTimer()">OK</button>
+        </div>
+      </div>
+    </div>
+    <div id="modal-info" class="modal-overlay">
+      <div class="modal-box">
+        <p id="modal-info-text" style="margin:20px 0; font-size:15px;"></p>
+        <button class="modal-btn-ok" style="width:100%;" onclick="closeModal('modal-info')">OK</button>
+      </div>
     </div>
   </div>
 
@@ -173,9 +196,16 @@
     function toggleRelay(relay, state) { client.publish(BASE_TOPIC + '/cmd', 'r' + relay + '=' + (state ? 1 : 0)); }
     function setAll(state) { client.publish(BASE_TOPIC + '/cmd', 'all=' + state); }
 
-    function setTimer() {
-      let mins = prompt("Masukkan waktu timer (menit):", "");
-      if (mins !== null && mins > 0) {
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function showInfo(text) { document.getElementById('modal-info-text').innerText = text; openModal('modal-info'); }
+
+function setTimer() { openModal('modal-timer'); document.getElementById('timer-input').value = ''; document.getElementById('timer-input').focus(); }
+
+function submitTimer() {
+      let mins = parseInt(document.getElementById('timer-input').value);
+      if (!isNaN(mins) && mins > 0) {
+        closeModal('modal-timer');
         client.publish(BASE_TOPIC + '/cmd', 'timer=' + mins);
         let remainingSeconds = mins * 60;
         let timerBtn = document.getElementById('btn-timer');
@@ -197,7 +227,7 @@
       let r=document.getElementById('sch-relay').value; let s=document.getElementById('sch-state').value;
       let t=document.getElementById('sch-time').value; if(!t)return;
       let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+p[0]+':'+p[1]);
-      alert('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
+      showInfo('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
     }
 
     function deleteSchedule(id) { client.publish(BASE_TOPIC+'/sch_cmd', 'del:'+id); }
@@ -226,13 +256,13 @@
       document.getElementById('inactive-count').innerText=4-active;
     }
 
-    function saveCustomName(event) {
+function saveCustomName(event) {
       event.preventDefault();
       for(let i=1; i<=4; i++) {
         let name = document.getElementById('input-name-'+i).value;
         client.publish(BASE_TOPIC + '/name_cmd', 'set:' + i + ':' + name);
       }
-      alert('Nama dikirim ke perangkat!');
+      showInfo('Nama dikirim ke perangkat!');
       switchTab('control');
     }
   </script>
