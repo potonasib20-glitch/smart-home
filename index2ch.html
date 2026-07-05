@@ -53,6 +53,13 @@
     .conn-status { text-align: center; padding: 5px; font-size: 12px; margin-bottom: 15px; border-radius: 8px; }
     .conn-on { background: rgba(34,197,94,0.2); color: #22c55e; }
     .conn-off { background: rgba(239,68,68,0.2); color: #ef4444; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-box { background: var(--card-bg); padding: 25px; border-radius: 16px; border: 1px solid #334155; width: 90%; max-width: 350px; text-align: center; }
+    .modal-box input { width: 100%; padding: 12px; margin: 15px 0; background: var(--bg-color); border: 1px solid #334155; border-radius: 10px; color: var(--text-main); font-size: 16px; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+    .modal-btn-cancel { background: #475569; color: #fff; }
+    .modal-btn-ok { background: var(--accent-on); color: #000; }
   </style>
 </head>
 <body>
@@ -88,6 +95,7 @@
       <form onsubmit="saveSchedule(event)">
         <div class="form-group"><label>Pilih Lampu:</label><select id="sch-relay"><option value="0">Semua Lampu</option><option value="1">Lampu 1</option><option value="2">Lampu 2</option></select></div>
         <div class="form-group"><label>Aksi:</label><select id="sch-state"><option value="1">NYALAKAN</option><option value="0">MATIKAN</option></select></div>
+        <div class="form-group"><label>Hari:</label><select id="sch-day"><option value="0">Minggu</option><option value="1" selected>Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option></select></div>
         <div class="form-group"><label>Waktu (Jam:Menit):</label><input type="time" id="sch-time" required></div>
         <button type="submit" class="btn-submit">TAMBAH JADWAL</button>
       </form>
@@ -103,12 +111,29 @@
         <button type="submit" class="btn-submit">SIMPAN PENGATURAN</button>
       </form>
     </div>
+    
+    <div id="modal-timer" class="modal-overlay">
+      <div class="modal-box">
+        <h3>⏱️ Masukkan Waktu Timer</h3>
+        <input type="number" id="timer-input" placeholder="Waktu (menit)" min="1">
+        <div class="modal-actions">
+          <button class="modal-btn-cancel" onclick="closeModal('modal-timer')">BATAL</button>
+          <button class="modal-btn-ok" onclick="submitTimer()">OK</button>
+        </div>
+      </div>
+    </div>
+    <div id="modal-info" class="modal-overlay">
+      <div class="modal-box">
+        <p id="modal-info-text" style="margin:20px 0; font-size:15px;"></p>
+        <button class="modal-btn-ok" style="width:100%;" onclick="closeModal('modal-info')">OK</button>
+      </div>
+    </div>
   </div>
 
   <script>
     const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
-        const urlParams = new URLSearchParams(window.location.search);
-    const BASE_TOPIC = urlParams.get('topic') || 'smarthome/device02';
+    const urlParams = new URLSearchParams(window.location.search);
+    const BASE_TOPIC = urlParams.get('topic') || 'smarthome/device03';
     
     let client = mqtt.connect(BROKER_URL, { clientId: 'web_' + Math.random().toString(16).substr(2, 8), clean: true });
     let timerInterval = null;
@@ -167,21 +192,24 @@
     function toggleRelay(relay, state) { client.publish(BASE_TOPIC + '/cmd', 'r' + relay + '=' + (state ? 1 : 0)); }
     function setAll(state) { client.publish(BASE_TOPIC + '/cmd', 'all=' + state); }
 
-    function setTimer() {
-      let mins = prompt("Masukkan waktu timer (menit):", "");
-      if (mins !== null && mins > 0) {
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function showInfo(text) { document.getElementById('modal-info-text').innerText = text; openModal('modal-info'); }
+
+    function setTimer() { openModal('modal-timer'); document.getElementById('timer-input').value = ''; document.getElementById('timer-input').focus(); }
+
+    function submitTimer() {
+      let mins = parseInt(document.getElementById('timer-input').value);
+      if (!isNaN(mins) && mins > 0) {
+        closeModal('modal-timer');
         client.publish(BASE_TOPIC + '/cmd', 'timer=' + mins);
         let remainingSeconds = mins * 60;
         let timerBtn = document.getElementById('btn-timer');
         if(timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(function() {
           remainingSeconds--;
-          if (remainingSeconds <= 0) {
-            clearInterval(timerInterval); timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = '';
-          } else {
-            let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60;
-            timerBtn.innerText = 'TIMER (' + (m<10?'0':'')+m+':'+(s<10?'0':'')+s+')'; timerBtn.style.backgroundColor = '#f97316';
-          }
+          if (remainingSeconds <= 0) { clearInterval(timerInterval); timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = ''; }
+          else { let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60; timerBtn.innerText = 'TIMER ('+(m<10?'0':'')+m+':'+(s<10?'0':'')+s+')'; timerBtn.style.backgroundColor = '#f97316'; }
         }, 1000);
       }
     }
@@ -189,21 +217,23 @@
     function saveSchedule(event) {
       event.preventDefault();
       let r=document.getElementById('sch-relay').value; let s=document.getElementById('sch-state').value;
+      let d=document.getElementById('sch-day').value;
       let t=document.getElementById('sch-time').value; if(!t)return;
-      let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+p[0]+':'+p[1]);
-      alert('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
+      let p=t.split(':'); client.publish(BASE_TOPIC+'/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]);
+      showInfo('Jadwal dikirim ke perangkat!'); document.getElementById('sch-time').value='';
     }
 
     function deleteSchedule(id) { client.publish(BASE_TOPIC+'/sch_cmd', 'del:'+id); }
 
     function loadSchedulesUI(data) {
       let list=document.getElementById('schedule-list'); list.innerHTML='';
+      let days=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
       try {
         let sch=JSON.parse(data); if(!sch||sch.length===0){list.innerHTML='<p style="text-align:center;color:#94a3b8;">Belum ada jadwal.</p>';return;}
         sch.forEach(s => {
           let rn=s.relay==0?'Semua':'Lampu '+s.relay; let sn=s.state==1?'NYALA':'MATI'; let sc=s.state==1?'#22c55e':'#ef4444';
           let ts=(s.hour<10?'0':'')+s.hour+':'+(s.minute<10?'0':'')+s.minute;
-          list.innerHTML+=`<div class="schedule-item"><div><div class="sch-time">${ts}</div><div class="sch-info">${rn} <span style="color:${sc};font-weight:bold;">${sn}</span></div></div><button class="btn-del" onclick="deleteSchedule(${s.id})">HAPUS</button></div>`;
+          list.innerHTML+=`<div class="schedule-item"><div><div class="sch-time">${days[s.day]} ${ts}</div><div class="sch-info">${rn} <span style="color:${sc};font-weight:bold;">${sn}</span></div></div><button class="btn-del" onclick="deleteSchedule(${s.id})">HAPUS</button></div>`;
         });
       } catch(e){ list.innerHTML='<p style="text-align:center;color:#94a3b8;">Gagal memuat jadwal.</p>'; }
     }
@@ -222,13 +252,10 @@
 
     function saveCustomName(event) {
       event.preventDefault();
-      let name1 = document.getElementById('input-name-1').value;
-      let name2 = document.getElementById('input-name-2').value;
-      client.publish(BASE_TOPIC + '/name_cmd', 'set:1:' + name1);
-      client.publish(BASE_TOPIC + '/name_cmd', 'set:2:' + name2);
-      alert('Nama dikirim ke perangkat!');
+      for(let i=1; i<=2; i++) { let name = document.getElementById('input-name-'+i).value; client.publish(BASE_TOPIC + '/name_cmd', 'set:' + i + ':' + name); }
+      showInfo('Nama dikirim ke perangkat!');
       switchTab('control');
     }
   </script>
 </body>
-</html> 
+</html>
