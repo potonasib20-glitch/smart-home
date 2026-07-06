@@ -105,7 +105,7 @@
   </div>
 
   <script>
-    let client = new Paho.MQTT.Client("broker.emqx.io", 8084, "web_" + Math.random().toString(16).substr(2, 8));
+    let client = new Paho.MQTT.Client("broker.emqx.io", 443, "/mqtt", "web_" + Math.random().toString(16).substr(2, 8));
     let modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
     let timerIntervals = {};
 
