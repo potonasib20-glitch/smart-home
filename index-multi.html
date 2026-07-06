@@ -150,25 +150,29 @@
     }
 
     function connectMQTT() {
-      document.getElementById('conn-status').innerText = "MEMBUKA WEBSOCKET...";
+      document.getElementById('conn-status').innerText = "1. MEMBUKA WS...";
       document.getElementById('conn-status').style.color = "#f97316";
       
       try {
         ws = new WebSocket("wss://broker.emqx.io:443/mqtt");
+        document.getElementById('conn-status').innerText = "2. WS DIBUAT...";
+        
         ws.binaryType = "arraybuffer";
 
         ws.onopen = function() {
-          mqttSendConnect();
-          document.getElementById('conn-status').innerText = "MQTT: CONNECTED";
-          document.getElementById('conn-status').style.color = "#22c55e";
-          modules.forEach(function(mod) {
-            mqttSendSubscribe(mod.topic + '/state');
-            mqttSendSubscribe(mod.topic + '/names');
-            mqttSendSubscribe(mod.topic + '/schedule');
-          });
+          document.getElementById('conn-status').innerText = "3. WS TERBUKA, KIRIM PAKET...";
+          try {
+            mqttSendConnect();
+            document.getElementById('conn-status').innerText = "4. MQTT CONNECTED!";
+            document.getElementById('conn-status').style.color = "#22c55e";
+          } catch(e) {
+            document.getElementById('conn-status').innerText = "5. GAGAL KIRIM: " + e.message;
+          }
         };
 
         ws.onmessage = function(event) {
+          document.getElementById('conn-status').innerText = "DATA MASUK DARI WEMOS!";
+          document.getElementById('conn-status').style.color = "#22c55e";
           var data = new Uint8Array(event.data);
           if ((data[0] & 0xF0) === 0x30) {
             var idx = 1; var remLen = 0, mul = 1;
@@ -185,14 +189,18 @@
           }
         };
 
-        ws.onclose = function() { 
-          document.getElementById('conn-status').innerText = "MQTT: DISCONNECTED";
+        ws.onclose = function(e) { 
+          document.getElementById('conn-status').innerText = "6. PUTUS (Kode: " + e.code + ")";
           document.getElementById('conn-status').style.color = "#ef4444";
-          setTimeout(connectMQTT, 5000); 
+          setTimeout(connectMQTT, 10000); 
         };
-        ws.onerror = function() { ws.close(); };
+        
+        ws.onerror = function() { 
+          document.getElementById('conn-status').innerText = "7. ERROR WS";
+          document.getElementById('conn-status').style.color = "#ef4444";
+        };
       } catch(e) {
-        document.getElementById('conn-status').innerText = "ERROR: " + e.message;
+        document.getElementById('conn-status').innerText = "8. ERROR: " + e.message;
         document.getElementById('conn-status').style.color = "#ef4444";
       }
     }
