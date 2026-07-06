@@ -14,9 +14,7 @@
     .status-item .value { font-size: 18px; font-weight: bold; color: var(--accent-on); text-align: center;}
     .status-item .label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
     .clock-display { text-align: center; font-size: 20px; font-weight: bold; color: var(--accent-on); margin-bottom: 15px; }
-    #conn-status { text-align: center; padding: 5px; font-size: 11px; margin-bottom: 15px; border-radius: 8px; font-weight: bold; }
-    .conn-on { background: rgba(34,197,94,0.2); color: #22c55e; }
-    .conn-off { background: rgba(239,68,68,0.2); color: #ef4444; }
+    #conn-status { text-align: center; padding: 10px; font-size: 13px; margin-bottom: 15px; border-radius: 8px; font-weight: bold; background: rgba(255,255,255,0.1); }
     .module-card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); margin-bottom: 20px; overflow: hidden; }
     .module-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
     .module-header h2 { font-size: 1rem; display: flex; align-items: center; gap: 8px; }
@@ -69,7 +67,7 @@
       <div class="status-item"><div class="value" id="total-count">0</div><div class="label">Total Perangkat</div></div>
     </div>
     <div class="clock-display" id="live-clock">--:--:--</div>
-    <div id="conn-status" class="conn-status conn-off">MQTT: DISCONNECTED</div>
+    <div id="conn-status" style="color:#f97316;">MULAI SYSTEM...</div>
     <div id="module-container"></div>
     <div class="add-module-card" onclick="openModal('modal-add')">
       <span>➕</span>
@@ -105,7 +103,17 @@
 
   <script>
     var ws;
-    var modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
+    var modules = [];
+    
+    try { 
+      modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || []; 
+      document.getElementById('conn-status').innerText = "MODUL DITEMUKAN: " + modules.length;
+    } catch(e) { 
+      document.getElementById('conn-status').innerText = "ERROR MODUL: " + e.message; 
+      localStorage.removeItem('my_smart_modules_v2');
+      modules = [];
+    }
+
     var timerIntervals = {};
 
     function updateClock() {
@@ -115,9 +123,10 @@
     }
     setInterval(updateClock, 1000); updateClock();
 
-    function updateConnStatus(status) {
-      document.getElementById('conn-status').innerHTML = status ? 'MQTT: CONNECTED' : 'MQTT: DISCONNECTED';
-      document.getElementById('conn-status').className = 'conn-status ' + (status ? 'conn-on' : 'conn-off');
+    function setDebug(text, color) {
+      var el = document.getElementById('conn-status');
+      el.innerText = text;
+      el.style.color = color || "#fff";
     }
 
     function strToBytes(str) {
@@ -157,39 +166,56 @@
     }
 
     function connectMQTT() {
-      ws = new WebSocket("wss://broker.emqx.io:443/mqtt");
-      ws.binaryType = "arraybuffer";
+      setDebug("MEMBUKA WEBSOCKET...", "#f97316");
+      try {
+        ws = new WebSocket("wss://broker.emqx.io:443/mqtt");
+        ws.binaryType = "arraybuffer";
 
-      ws.onopen = function() {
-        mqttSendConnect();
-        updateConnStatus(true);
-        modules.forEach(function(mod) {
-          mqttSendSubscribe(mod.topic + '/state');
-          mqttSendSubscribe(mod.topic + '/names');
-          mqttSendSubscribe(mod.topic + '/schedule');
-        });
-      };
+        ws.onopen = function() {
+          setDebug("WEBSOCKET TERBUKA, KIRIM MQTT CONNECT...", "#3b82f6");
+          try {
+            mqttSendConnect();
+            setDebug("MQTT: CONNECTED", "#22c55e");
+            modules.forEach(function(mod) {
+              mqttSendSubscribe(mod.topic + '/state');
+              mqttSendSubscribe(mod.topic + '/names');
+              mqttSendSubscribe(mod.topic + '/schedule');
+            });
+          } catch(e) {
+            setDebug("GAGAL KIRIM PAKET: " + e.message, "#ef4444");
+          }
+        };
 
-      ws.onmessage = function(event) {
-        var data = new Uint8Array(event.data);
-        if ((data[0] & 0xF0) === 0x30) {
-          var idx = 1;
-          var remLen = 0, mul = 1;
-          do { remLen += (data[idx] & 127) * mul; mul *= 128; idx++; } while ((data[idx-1] & 128) !== 0);
-          var tLen = (data[idx] << 8) + data[idx+1]; idx += 2;
-          var topic = ""; for(var i=0; i<tLen; i++) topic += String.fromCharCode(data[idx+i]); idx += tLen;
-          if (((data[0] & 0x06) >> 1) > 0) idx += 2;
-          var msg = ""; while(idx < data.length) msg += String.fromCharCode(data[idx++]);
-          
-          var tp = topic.split('/'); var base = tp[0]+'/'+tp[1]; var sub = tp[2];
-          if (sub === 'state') { try { updateModuleUI(base, JSON.parse(msg)); } catch(e) {} }
-          else if (sub === 'names') { try { updateModuleNames(base, JSON.parse(msg)); } catch(e) {} }
-          else if (sub === 'schedule') { try { updateModuleSchedules(base, JSON.parse(msg)); } catch(e) {} }
-        }
-      };
+        ws.onmessage = function(event) {
+          var data = new Uint8Array(event.data);
+          if ((data[0] & 0xF0) === 0x30) {
+            var idx = 1;
+            var remLen = 0, mul = 1;
+            do { remLen += (data[idx] & 127) * mul; mul *= 128; idx++; } while ((data[idx-1] & 128) !== 0);
+            var tLen = (data[idx] << 8) + data[idx+1]; idx += 2;
+            var topic = ""; for(var i=0; i<tLen; i++) topic += String.fromCharCode(data[idx+i]); idx += tLen;
+            if (((data[0] & 0x06) >> 1) > 0) idx += 2;
+            var msg = ""; while(idx < data.length) msg += String.fromCharCode(data[idx++]);
+            
+            var tp = topic.split('/'); var base = tp[0]+'/'+tp[1]; var sub = tp[2];
+            if (sub === 'state') { try { updateModuleUI(base, JSON.parse(msg)); } catch(e) {} }
+            else if (sub === 'names') { try { updateModuleNames(base, JSON.parse(msg)); } catch(e) {} }
+            else if (sub === 'schedule') { try { updateModuleSchedules(base, JSON.parse(msg)); } catch(e) {} }
+          }
+        };
 
-      ws.onclose = function() { updateConnStatus(false); setTimeout(connectMQTT, 5000); };
-      ws.onerror = function() { ws.close(); };
+        ws.onclose = function() { 
+          setDebug("WEBSOCKET TERTUTUS, COBA 5 DETIK LAGI...", "#ef4444"); 
+          setTimeout(connectMQTT, 5000); 
+        };
+        
+        ws.onerror = function() { 
+          setDebug("WEBSOCKET ERROR!", "#ef4444"); 
+          ws.close(); 
+        };
+      } catch(e) {
+        setDebug("ERROR WEBSOCKET: " + e.message, "#ef4444");
+      }
     }
 
     function addModule() {
