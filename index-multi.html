@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home Multi-Module</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root { --bg-color: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8; --accent-on: #22c55e; --accent-off: #475569; --accent-glow: #16a34a; --danger: #ef4444; --border: #334155; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; min-height: 100vh; padding: 20px; }
+    .container { width: 100%; max-width: 450px; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .header h1 { font-size: 1.8rem; color: var(--accent-on); margin-bottom: 5px; }
+    .header p { color: var(--text-muted); font-size: 0.9rem; }
+    
+    #conn-status { text-align: center; padding: 8px; font-size: 12px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; }
+    .conn-on { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .conn-off { background: rgba(239,68,68,0.2); color: #ef4444; }
+
+    .module-card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); margin-bottom: 20px; overflow: hidden; }
+    .module-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+    .module-header h2 { font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
+    .btn-del-mod { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    .module-body { padding: 15px 20px; }
+    .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .switch-row:last-child { border-bottom: none; }
+    .switch-info h3 { font-size: 15px; font-weight: 500; }
+    .switch-info p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    
+    .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--accent-off); transition: .4s; border-radius: 26px; }
+    .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: var(--accent-on); box-shadow: 0 0 10px var(--accent-glow); }
+    input:checked + .slider:before { transform: translateX(24px); }
+    
+    .module-actions { display: flex; gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }
+    .action-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; text-transform: uppercase; }
+    .btn-allon { background: var(--accent-on); color: #000; }
+    .btn-alloff { background: var(--danger); color: #fff; }
+    .no-data-text { text-align: center; color: var(--text-muted); padding: 10px; font-style: italic; }
+
+    .add-module-card { background: transparent; border: 2px dashed var(--border); border-radius: 16px; padding: 30px; text-align: center; cursor: pointer; color: var(--text-muted); transition: 0.3s; }
+    .add-module-card:hover { border-color: var(--accent-on); color: var(--accent-on); }
+    .add-module-card span { font-size: 2rem; display: block; margin-bottom: 10px; }
+
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-box { background: var(--card-bg); padding: 25px; border-radius: 16px; border: 1px solid var(--border); width: 90%; max-width: 350px; }
+    .modal-box h3 { margin-bottom: 20px; text-align: center; }
+    .form-group { margin-bottom: 15px; text-align: left; }
+    .form-group label { display: block; margin-bottom: 5px; font-size: 13px; color: var(--text-muted); }
+    .form-group input { width: 100%; padding: 12px; background: var(--bg-color); border: 1px solid var(--border); border-radius: 8px; color: var(--text-main); font-size: 14px; box-sizing: border-box; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .modal-btn-cancel { background: #475569; color: #fff; }
+    .modal-btn-ok { background: var(--accent-on); color: #000; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚡ SMART HOME</h1>
+      <p>Multi-Module Dashboard</p>
+    </div>
+    
+    <div id="conn-status" class="conn-status conn-off">MQTT: DISCONNECTED</div>
+
+    <div id="module-container">
+    </div>
+
+    <div class="add-module-card" onclick="openModal()">
+      <span>➕</span>
+      Tambah Modul Baru
+    </div>
+  </div>
+
+  <div id="modal-add" class="modal-overlay">
+    <div class="modal-box">
+      <h3>Hubungkan Modul Baru</h3>
+      <div class="form-group">
+        <label>Nama Modul (Contoh: Lampu Teras)</label>
+        <input type="text" id="input-name" placeholder="Lampu Teras">
+      </div>
+      <div class="form-group">
+        <label>Topik MQTT (Contoh: smarthome/device03)</label>
+        <input type="text" id="input-topic" placeholder="smarthome/device03">
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn-cancel" onclick="closeModal()">BATAL</button>
+        <button class="modal-btn-ok" onclick="addModule()">HUBUNGKAN</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+    let client = mqtt.connect(BROKER_URL, { clientId: 'web_multi_' + Math.random().toString(16).substr(2, 8), clean: true });
+    
+    let modules = JSON.parse(localStorage.getItem('my_smart_modules')) || [];
+
+    client.on('connect', function () {
+      document.getElementById('conn-status').innerHTML = 'MQTT: CONNECTED';
+      document.getElementById('conn-status').className = 'conn-status conn-on';
+      modules.forEach(mod => {
+        client.subscribe(mod.topic + '/state');
+        client.subscribe(mod.topic + '/names');
+      });
+    });
+
+    client.on('error', function () { updateConnStatus(false); });
+    client.on('close', function () { updateConnStatus(false); });
+
+    function updateConnStatus(status) {
+      document.getElementById('conn-status').innerHTML = status ? 'MQTT: CONNECTED' : 'MQTT: DISCONNECTED';
+      document.getElementById('conn-status').className = 'conn-status ' + (status ? 'conn-on' : 'conn-off');
+    }
+
+    client.on('message', function (topic, message) {
+      let msg = message.toString();
+      let topicParts = topic.split('/');
+      let baseTopic = topicParts[0] + '/' + topicParts[1]; 
+      let subTopic = topicParts[2];
+
+      if (subTopic === 'state') {
+        try {
+          let data = JSON.parse(msg);
+          updateModuleUI(baseTopic, data);
+        } catch(e) {}
+      } else if (subTopic === 'names') {
+        try {
+          let data = JSON.parse(msg);
+          updateModuleNames(baseTopic, data);
+        } catch(e) {}
+      }
+    });
+
+    function addModule() {
+      let name = document.getElementById('input-name').value.trim();
+      let topic = document.getElementById('input-topic').value.trim();
+      
+      if (!name || !topic) { alert("Nama dan Topik tidak boleh kosong!"); return; }
+      
+      if (modules.find(m => m.topic === topic)) { alert("Modul dengan topik ini sudah ditambahkan!"); return; }
+
+      let newMod = { id: Date.now().toString(), name: name, topic: topic, states: {}, names: {} };
+      modules.push(newMod);
+      saveAndRender();
+      
+      client.subscribe(topic + '/state');
+      client.subscribe(topic + '/names');
+      
+      closeModal();
+      document.getElementById('input-name').value = '';
+      document.getElementById('input-topic').value = '';
+    }
+
+    function removeModule(id) {
+      if(confirm("Yakin ingin menghapus modul ini dari tampilan? (Tidak akan mempengaruhi fisik perangkat)")) {
+        let mod = modules.find(m => m.id === id);
+        if(mod) {
+          client.unsubscribe(mod.topic + '/state');
+          client.unsubscribe(mod.topic + '/names');
+        }
+        modules = modules.filter(m => m.id !== id);
+        saveAndRender();
+      }
+    }
+
+    function saveAndRender() {
+      localStorage.setItem('my_smart_modules', JSON.stringify(modules));
+      renderModules();
+    }
+
+    function renderModules() {
+      let container = document.getElementById('module-container');
+      container.innerHTML = '';
+
+      modules.forEach(mod => {
+        let safeId = mod.topic.replace(/\//g, '-');
+        let channelCount = Object.keys(mod.states).length;
+
+        let html = `
+          <div class="module-card" id="card-${safeId}">
+            <div class="module-header">
+              <h2>📦 ${mod.name}</h2>
+              <button class="btn-del-mod" onclick="removeModule('${mod.id}')">HAPUS</button>
+            </div>
+            <div class="module-body">
+              <div id="switches-${safeId}">
+                ${channelCount === 0 ? '<p class="no-data-text">Menunggu data dari perangkat...</p>' : ''}
+              </div>
+              <div class="module-actions" id="actions-${safeId}" style="display: ${channelCount > 0 ? 'flex' : 'none'}">
+                <button class="action-btn btn-allon" onclick="setAll('${mod.topic}', 1)">ALL ON</button>
+                <button class="action-btn btn-alloff" onclick="setAll('${mod.topic}', 0)">ALL OFF</button>
+              </div>
+            </div>
+          </div>
+        `;
+        container.innerHTML += html;
+
+        if (channelCount > 0) {
+          updateModuleUI(mod.topic, mod.states);
+        }
+      });
+    }
+
+    function updateModuleUI(topic, data) {
+      let mod = modules.find(m => m.topic === topic);
+      if (!mod) return;
+
+      let safeId = topic.replace(/\//g, '-');
+      let switchContainer = document.getElementById('switches-' + safeId);
+      let actionContainer = document.getElementById('actions-' + safeId);
+      
+      let keys = Object.keys(data).filter(k => k.startsWith('s'));
+      let count = keys.length;
+
+      mod.states = data;
+
+      if (switchContainer.children.length !== count) {
+        let html = '';
+        keys.forEach(key => {
+          let chNum = key.replace('s', '');
+          let chName = mod.names['n' + chNum] || ('Lampu ' + chNum);
+          let isOn = data[key] === 1;
+          
+          html += `
+            <div class="switch-row">
+              <div class="switch-info">
+                <h3 id="title-${safeId}-${chNum}">${chName}</h3>
+                <p id="status-${safeId}-${chNum}" style="color: ${isOn ? '#22c55e' : '#94a3b8'}">Status: ${isOn ? 'Nyala' : 'Mati'}</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleRelay('${topic}', ${chNum}, this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          `;
+        });
+        switchContainer.innerHTML = html;
+        actionContainer.style.display = 'flex';
+      } else {
+        keys.forEach(key => {
+          let chNum = key.replace('s', '');
+          let isOn = data[key] === 1;
+          let row = switchContainer.querySelector(`#status-${safeId}-${chNum}`);
+          if(row) {
+            row.innerText = 'Status: ' + (isOn ? 'Nyala' : 'Mati');
+            row.style.color = isOn ? '#22c55e' : '#94a3b8';
+          }
+          let checkbox = switchContainer.querySelector(`input[type=checkbox][onchange*="'${topic}', ${chNum}"]`);
+          if(checkbox) checkbox.checked = isOn;
+        });
+      }
+    }
+
+    function updateModuleNames(topic, data) {
+      let mod = modules.find(m => m.topic === topic);
+      if (!mod) return;
+      mod.names = data;
+      
+      let safeId = topic.replace(/\//g, '-');
+      Object.keys(data).forEach(key => {
+        let chNum = key.replace('n', '');
+        let titleEl = document.getElementById(`title-${safeId}-${chNum}`);
+        if (titleEl) titleEl.innerText = data[key];
+      });
+    }
+
+    function toggleRelay(topic, ch, state) {
+      client.publish(topic + '/cmd', 'r' + ch + '=' + (state ? 1 : 0));
+    }
+
+    function setAll(topic, state) {
+      client.publish(topic + '/cmd', 'all=' + state);
+    }
+
+    function openModal() { document.getElementById('modal-add').style.display = 'flex'; }
+    function closeModal() { document.getElementById('modal-add').style.display = 'none'; }
+
+    renderModules();
+  </script>
+</body>
+</html>
