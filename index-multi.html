@@ -1,32 +1,429 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home Pro</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <style>
+    :root { --bg-color: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8; --accent-on: #22c55e; --accent-off: #475569; --accent-glow: #16a34a; --danger: #ef4444; --border: #334155; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; min-height: 100vh; padding: 15px; }
+    .container { width: 100%; max-width: 450px; }
+    .glow-title { display: block; text-align: center; background: rgba(14,98,194,0.1); color: #fff; padding: 15px; margin-bottom: 0px; font-size: 1.8rem; letter-spacing: 2px; text-transform: uppercase; border: 1px solid #0e62c2; box-shadow: 0 0 15px rgba(14,98,194,0.2); border-radius: 12px 12px 0 0; text-shadow: 0 0 10px #0e62c2; }
+    .status-bar { display: flex; background: var(--card-bg); padding: 12px; border: 1px solid var(--border); border-top: none; justify-content: space-around; border-radius: 0 0 12px 12px; margin-bottom: 15px; }
+    .status-item .value { font-size: 18px; font-weight: bold; color: var(--accent-on); text-align: center;}
+    .status-item .label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+    .clock-display { text-align: center; font-size: 20px; font-weight: bold; color: var(--accent-on); margin-bottom: 15px; }
+    #conn-status { text-align: center; padding: 5px; font-size: 11px; margin-bottom: 15px; border-radius: 8px; font-weight: bold; }
+    .conn-on { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .conn-off { background: rgba(239,68,68,0.2); color: #ef4444; }
+    .module-card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); margin-bottom: 20px; overflow: hidden; }
+    .module-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+    .module-header h2 { font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+    .btn-del-mod { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+    .module-body { padding: 15px; }
+    .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .switch-row:last-child { border-bottom: none; }
+    .switch-info h3 { font-size: 14px; font-weight: 500; }
+    .switch-info p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .switch { position: relative; display: inline-block; width: 46px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--accent-off); transition: .4s; border-radius: 24px; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: var(--accent-on); box-shadow: 0 0 8px var(--accent-glow); }
+    input:checked + .slider:before { transform: translateX(22px); }
+    .module-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+    .action-btn { padding: 8px; border: none; border-radius: 8px; font-weight: bold; font-size: 11px; cursor: pointer; text-transform: uppercase; }
+    .btn-allon { background: var(--accent-on); color: #000; }
+    .btn-alloff { background: var(--danger); color: #fff; }
+    .btn-timer { background: #3b82f6; color: #fff; }
+    .no-data-text { text-align: center; color: var(--text-muted); padding: 10px; font-style: italic; font-size: 13px; }
+    .add-module-card { background: transparent; border: 2px dashed var(--border); border-radius: 16px; padding: 25px; text-align: center; cursor: pointer; color: var(--text-muted); transition: 0.3s; margin-bottom: 20px; }
+    .add-module-card:hover { border-color: var(--accent-on); color: var(--accent-on); }
+    .add-module-card span { font-size: 1.5rem; display: block; margin-bottom: 5px; }
+    .acc-header { background: rgba(0,0,0,0.2); padding: 10px 15px; font-size: 13px; cursor: pointer; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .acc-body { display: none; padding: 15px; border-top: 1px solid var(--border); }
+    .acc-body.active { display: block; }
+    .form-group { margin-bottom: 12px; text-align: left; }
+    .form-group label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted); }
+    .form-group input, .form-group select { width: 100%; padding: 8px; background: var(--bg-color); border: 1px solid var(--border); border-radius: 6px; color: var(--text-main); font-size: 13px; box-sizing: border-box; }
+    .btn-submit { width: 100%; padding: 10px; background: var(--accent-on); color: #000; border: none; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; }
+    .schedule-item { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+    .sch-time { font-weight: bold; color: var(--accent-on); }
+    .btn-del { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 10px; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-box { background: var(--card-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border); width: 90%; max-width: 320px; }
+    .modal-box h3 { margin-bottom: 15px; text-align: center; font-size: 15px; }
+    .modal-box input { width: 100%; padding: 10px; margin: 10px 0; background: var(--bg-color); border: 1px solid var(--border); border-radius: 8px; color: var(--text-main); font-size: 14px; box-sizing: border-box; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 15px; }
+    .modal-actions button { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; }
+    .modal-btn-cancel { background: #475569; color: #fff; }
+    .modal-btn-ok { background: var(--accent-on); color: #000; }
+  </style>
 </head>
-<body style="background:#000; color:#fff; text-align:center; padding-top:50px; font-family:sans-serif;">
-    <h1 id="status" style="color:red;">SEDANG MENGHUBUNGKAN...</h1>
-    <script>
-        try {
-            var ws = new WebSocket("wss://broker.emqx.io:443/mqtt");
-            
-            ws.onopen = function() {
-                document.getElementById("status").innerText = "BERHASIL TERHUBUNG!";
-                document.getElementById("status").style.color = "#22c55e";
-            };
-            
-            ws.onerror = function() {
-                document.getElementById("status").innerText = "GAGAL! WEBVIEW MEMBLOKIR WEBSOCKET";
-                document.getElementById("status").style.color = "#ef4444";
-            };
-            
-            ws.onclose = function() {
-                document.getElementById("status").innerText = "KONEKSI TERPUTUS";
-                document.getElementById("status").style.color = "#f97316";
-            };
-        } catch (e) {
-            document.getElementById("status").innerText = "ERROR: " + e.message;
+<body>
+  <div class="container">
+    <h1 class="glow-title">⚡ SMART HOME</h1>
+    <div class="status-bar">
+      <div class="status-item"><div class="value" id="active-count">0</div><div class="label">Total Nyala</div></div>
+      <div class="status-item"><div class="value" id="total-count">0</div><div class="label">Total Perangkat</div></div>
+    </div>
+    <div class="clock-display" id="live-clock">--:--:--</div>
+    <div id="conn-status" class="conn-status conn-off">MQTT: DISCONNECTED</div>
+    <div id="module-container"></div>
+    <div class="add-module-card" onclick="openModal('modal-add')">
+      <span>➕</span>
+      Tambah Modul Baru
+    </div>
+  </div>
+
+  <div id="modal-add" class="modal-overlay">
+    <div class="modal-box">
+      <h3>Hubungkan Modul Baru</h3>
+      <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:5px;text-align:left;">Nama Modul</label>
+      <input type="text" id="input-name" placeholder="Contoh: Lampu Teras">
+      <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:5px;text-align:left;">Topik MQTT</label>
+      <input type="text" id="input-topic" placeholder="Contoh: smarthome/device03">
+      <div class="modal-actions">
+        <button class="modal-btn-cancel" onclick="closeModal('modal-add')">BATAL</button>
+        <button class="modal-btn-ok" onclick="addModule()">HUBUNGKAN</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-timer" class="modal-overlay">
+    <div class="modal-box">
+      <h3>⏱️ Set Timer Modul</h3>
+      <input type="hidden" id="timer-topic">
+      <input type="number" id="timer-input" placeholder="Waktu (menit)" min="1">
+      <div class="modal-actions">
+        <button class="modal-btn-cancel" onclick="closeModal('modal-timer')">BATAL</button>
+        <button class="modal-btn-ok" onclick="submitTimer()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let client = new Paho.MQTT.Client("broker.emqx.io", 8084, "web_" + Math.random().toString(16).substr(2, 8));
+    let modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
+    let timerIntervals = {};
+
+    function updateClock() {
+      let now = new Date();
+      let h=now.getHours(); let m=now.getMinutes(); let s=now.getSeconds();
+      document.getElementById('live-clock').innerText = (h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    function updateConnStatus(status) {
+      document.getElementById('conn-status').innerHTML = status ? 'MQTT: CONNECTED' : 'MQTT: DISCONNECTED';
+      document.getElementById('conn-status').className = 'conn-status ' + (status ? 'conn-on' : 'conn-off');
+    }
+
+    client.onConnectionLost = function () { updateConnStatus(false); };
+
+    client.onMessageArrived = function (message) {
+      let topicParts = message.destinationName.split('/');
+      let baseTopic = topicParts[0] + '/' + topicParts[1]; 
+      let subTopic = topicParts[2];
+
+      if (subTopic === 'state') {
+        try { updateModuleUI(baseTopic, JSON.parse(message.payloadString)); } catch(e) {}
+      } else if (subTopic === 'names') {
+        try { updateModuleNames(baseTopic, JSON.parse(message.payloadString)); } catch(e) {}
+      } else if (subTopic === 'schedule') {
+        try { updateModuleSchedules(baseTopic, JSON.parse(message.payloadString)); } catch(e) {}
+      }
+    };
+
+    client.connect({ 
+      useSSL: true, 
+      onSuccess: function() {
+        updateConnStatus(true);
+        modules.forEach(mod => {
+          client.subscribe(mod.topic + '/state');
+          client.subscribe(mod.topic + '/names');
+          client.subscribe(mod.topic + '/schedule');
+        });
+      }, 
+      onFailure: function() { 
+        updateConnStatus(false);
+      }
+    });
+
+    function publishMQTT(topic, payload) {
+      let msg = new Paho.MQTT.Message(payload);
+      msg.destinationName = topic;
+      client.send(msg);
+    }
+
+    function addModule() {
+      let name = document.getElementById('input-name').value.trim();
+      let topic = document.getElementById('input-topic').value.trim();
+      if (!name || !topic) { alert("Nama dan Topik tidak boleh kosong!"); return; }
+      if (modules.find(m => m.topic === topic)) { alert("Modul sudah ada!"); return; }
+      modules.push({ id: Date.now().toString(), name: name, topic: topic, states: {}, names: {}, schedules: [] });
+      saveAndRender();
+      client.subscribe(topic + '/state');
+      client.subscribe(topic + '/names');
+      client.subscribe(topic + '/schedule');
+      closeModal('modal-add');
+      document.getElementById('input-name').value = '';
+      document.getElementById('input-topic').value = '';
+    }
+
+    function removeModule(id) {
+      if(confirm("Hapus modul ini dari tampilan?")) {
+        let mod = modules.find(m => m.id === id);
+        if(mod) {
+          client.unsubscribe(mod.topic + '/state');
+          client.unsubscribe(mod.topic + '/names');
+          client.unsubscribe(mod.topic + '/schedule');
+          if(timerIntervals[mod.topic]) { clearInterval(timerIntervals[mod.topic]); delete timerIntervals[mod.topic]; }
         }
-    </script>
+        modules = modules.filter(m => m.id !== id);
+        saveAndRender();
+      }
+    }
+
+    function saveAndRender() {
+      localStorage.setItem('my_smart_modules_v2', JSON.stringify(modules));
+      renderModules();
+      updateGlobalCounts();
+    }
+
+    function updateGlobalCounts() {
+      let total = 0, active = 0;
+      modules.forEach(mod => {
+        let keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
+        total += keys.length;
+        keys.forEach(k => { if(mod.states[k] === 1) active++; });
+      });
+      document.getElementById('active-count').innerText = active;
+      document.getElementById('total-count').innerText = total;
+    }
+
+    function renderModules() {
+      let container = document.getElementById('module-container');
+      container.innerHTML = '';
+      modules.forEach(mod => {
+        let safeId = mod.topic.replace(/\//g, '-');
+        let keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
+        let count = keys.length;
+
+        let relayOptions = '<option value="0">Semua</option>';
+        keys.forEach(k => { let n = k.replace('s',''); relayOptions += `<option value="${n}">${mod.names['n'+n] || 'Lampu '+n}</option>`; });
+
+        let html = `
+          <div class="module-card" id="card-${safeId}">
+            <div class="module-header">
+              <h2>📦 ${mod.name}</h2>
+              <button class="btn-del-mod" onclick="removeModule('${mod.id}')">HAPUS</button>
+            </div>
+            <div class="module-body">
+              <div class="module-actions">
+                <button class="action-btn btn-allon" onclick="setAll('${mod.topic}', 1)">ALL ON</button>
+                <button class="action-btn btn-alloff" onclick="setAll('${mod.topic}', 0)">ALL OFF</button>
+                <button class="action-btn btn-timer" id="btn-timer-${safeId}" onclick="openTimerModal('${mod.topic}')">TIMER</button>
+              </div>
+              <div id="switches-${safeId}">
+                ${count === 0 ? '<p class="no-data-text">Menunggu data perangkat...</p>' : ''}
+              </div>
+            </div>
+            <div class="acc-header" onclick="toggleAcc('sch-${safeId}')">⏰ Jadwal Otomatis <span id="sch-arrow-${safeId}">▼</span></div>
+            <div class="acc-body" id="sch-${safeId}">
+              <form onsubmit="saveSchedule(event, '${mod.topic}')">
+                <div class="form-group"><label>Relay</label><select id="sch-relay-${safeId}">${relayOptions}</select></div>
+                <div class="form-group"><label>Aksi</label><select id="sch-state-${safeId}"><option value="1">Nyala</option><option value="0">Mati</option></select></div>
+                <div class="form-group"><label>Hari</label><select id="sch-day-${safeId}"><option value="7">Setiap Hari</option><option value="0">Minggu</option><option value="1">Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option></select></div>
+                <div class="form-group"><label>Waktu</label><input type="time" id="sch-time-${safeId}" required></div>
+                <button type="submit" class="btn-submit">TAMBAH JADWAL</button>
+              </form>
+              <div id="schedule-list-${safeId}" style="margin-top:15px;"></div>
+            </div>
+            <div class="acc-header" onclick="toggleAcc('nama-${safeId}')">⚙️ Pengaturan Nama <span id="nama-arrow-${safeId}">▼</span></div>
+            <div class="acc-body" id="nama-${safeId}">
+              <form onsubmit="saveNames(event, '${mod.topic}', '${safeId}')">
+                <div id="name-inputs-${safeId}"></div>
+                <button type="submit" class="btn-submit">SIMPAN NAMA</button>
+              </form>
+            </div>
+          </div>
+        `;
+        container.innerHTML += html;
+
+        if (count > 0) {
+          updateModuleUI(mod.topic, mod.states);
+          updateModuleNames(mod.topic, mod.names);
+        }
+        if(mod.schedules.length > 0) updateModuleSchedules(mod.topic, mod.schedules);
+      });
+    }
+
+    function toggleAcc(id) {
+      let body = document.getElementById(id);
+      let arrowId = id.includes('sch-') ? id.replace('sch-', 'sch-arrow-') : id.replace('nama-', 'nama-arrow-');
+      body.classList.toggle('active');
+      document.getElementById(arrowId).innerText = body.classList.contains('active') ? '▲' : '▼';
+    }
+
+    function updateModuleUI(topic, data) {
+      let mod = modules.find(m => m.topic === topic);
+      if (!mod) return;
+      let safeId = topic.replace(/\//g, '-');
+      let switchContainer = document.getElementById('switches-' + safeId);
+      if(!switchContainer) return;
+      
+      let keys = Object.keys(data).filter(k => k.startsWith('s'));
+      let count = keys.length;
+      mod.states = data;
+
+      if (switchContainer.children.length !== count || switchContainer.querySelector('.no-data-text')) {
+        let html = '';
+        keys.forEach(key => {
+          let chNum = key.replace('s', '');
+          let chName = mod.names['n' + chNum] || ('Lampu ' + chNum);
+          let isOn = data[key] === 1;
+          html += `
+            <div class="switch-row">
+              <div class="switch-info">
+                <h3 id="title-${safeId}-${chNum}">${chName}</h3>
+                <p id="status-${safeId}-${chNum}" style="color: ${isOn ? '#22c55e' : '#94a3b8'}">Status: ${isOn ? 'Nyala' : 'Mati'}</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleRelay('${topic}', ${chNum}, this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          `;
+        });
+        switchContainer.innerHTML = html;
+        
+        let nameContainer = document.getElementById('name-inputs-' + safeId);
+        if(nameContainer) {
+          let nameHtml = '';
+          keys.forEach(key => {
+            let chNum = key.replace('s', '');
+            nameHtml += `<div class="form-group"><label>Nama Relay ${chNum}</label><input type="text" id="inp-name-${safeId}-${chNum}" value="${mod.names['n' + chNum] || 'Lampu '+chNum}"></div>`;
+          });
+          nameContainer.innerHTML = nameHtml;
+        }
+      } else {
+        keys.forEach(key => {
+          let chNum = key.replace('s', '');
+          let isOn = data[key] === 1;
+          let row = switchContainer.querySelector(`#status-${safeId}-${chNum}`);
+          if(row) { row.innerText = 'Status: ' + (isOn ? 'Nyala' : 'Mati'); row.style.color = isOn ? '#22c55e' : '#94a3b8'; }
+          let checkbox = switchContainer.querySelector(`input[type=checkbox][onchange*="'${topic}', ${chNum}"]`);
+          if(checkbox) checkbox.checked = isOn;
+        });
+      }
+      updateGlobalCounts();
+    }
+
+    function updateModuleNames(topic, data) {
+      let mod = modules.find(m => m.topic === topic);
+      if (!mod) return;
+      mod.names = data;
+      let safeId = topic.replace(/\//g, '-');
+      Object.keys(data).forEach(key => {
+        let chNum = key.replace('n', '');
+        let titleEl = document.getElementById(`title-${safeId}-${chNum}`);
+        if (titleEl) titleEl.innerText = data[key];
+        let inpEl = document.getElementById(`inp-name-${safeId}-${chNum}`);
+        if (inpEl) inpEl.value = data[key];
+      });
+    }
+
+    function updateModuleSchedules(topic, data) {
+      let mod = modules.find(m => m.topic === topic);
+      if (!mod) return;
+      mod.schedules = data;
+      let safeId = topic.replace(/\//g, '-');
+      let list = document.getElementById('schedule-list-' + safeId);
+      if(!list) return;
+      let days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Setiap Hari'];
+      
+      if(!data || data.length === 0) { list.innerHTML = '<p class="no-data-text">Belum ada jadwal.</p>'; return; }
+      
+      let html = '';
+      data.forEach(s => {
+        let rn = s.relay == 0 ? 'Semua' : 'Relay ' + s.relay;
+        let sn = s.state == 1 ? 'NYALA' : 'MATI';
+        let sc = s.state == 1 ? '#22c55e' : '#ef4444';
+        let ts = (s.hour<10?'0':'')+s.hour+':'+(s.minute<10?'0':'')+s.minute;
+        html += `<div class="schedule-item"><div><div class="sch-time">${days[s.day]} ${ts}</div><div style="color:#94a3b8">${rn} <span style="color:${sc};font-weight:bold">${sn}</span></div></div><button class="btn-del" onclick="delSchedule('${topic}', ${s.id})">HAPUS</button></div>`;
+      });
+      list.innerHTML = html;
+    }
+
+    function toggleRelay(topic, ch, state) { publishMQTT(topic + '/cmd', 'r' + ch + '=' + (state ? 1 : 0)); }
+    function setAll(topic, state) { publishMQTT(topic + '/cmd', 'all=' + state); }
+
+    function openTimerModal(topic) {
+      document.getElementById('timer-topic').value = topic;
+      document.getElementById('timer-input').value = '';
+      openModal('modal-timer');
+    }
+
+    function submitTimer() {
+      let topic = document.getElementById('timer-topic').value;
+      let mins = parseInt(document.getElementById('timer-input').value);
+      if (!isNaN(mins) && mins > 0) {
+        closeModal('modal-timer');
+        publishMQTT(topic + '/cmd', 'timer=' + mins);
+        let safeId = topic.replace(/\//g, '-');
+        let timerBtn = document.getElementById('btn-timer-' + safeId);
+        let remainingSeconds = mins * 60;
+        
+        if(timerIntervals[topic]) clearInterval(timerIntervals[topic]);
+        timerIntervals[topic] = setInterval(function() {
+          remainingSeconds--;
+          if (remainingSeconds <= 0) { 
+            clearInterval(timerIntervals[topic]); 
+            delete timerIntervals[topic];
+            if(timerBtn) { timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = ''; } 
+          } else { 
+            let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60; 
+            if(timerBtn) { timerBtn.innerText = (m<10?'0':'')+m+':'+(s<10?'0':'')+s; timerBtn.style.backgroundColor = '#f97316'; } 
+          }
+        }, 1000);
+      }
+    }
+
+    function saveSchedule(event, topic) {
+      event.preventDefault();
+      let safeId = topic.replace(/\//g, '-');
+      let r = document.getElementById('sch-relay-'+safeId).value;
+      let s = document.getElementById('sch-state-'+safeId).value;
+      let d = document.getElementById('sch-day-'+safeId).value;
+      let t = document.getElementById('sch-time-'+safeId).value;
+      if(!t) return;
+      let p = t.split(':');
+      publishMQTT(topic + '/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]);
+      document.getElementById('sch-time-'+safeId).value = '';
+    }
+
+    function delSchedule(topic, id) { publishMQTT(topic + '/sch_cmd', 'del:'+id); }
+
+    function saveNames(event, topic, safeId) {
+      event.preventDefault();
+      let mod = modules.find(m => m.topic === topic);
+      if(!mod) return;
+      let keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
+      keys.forEach(key => {
+        let chNum = key.replace('s', '');
+        let inpEl = document.getElementById(`inp-name-${safeId}-${chNum}`);
+        if(inpEl) publishMQTT(topic + '/name_cmd', 'set:' + chNum + ':' + inpEl.value);
+      });
+      alert('Nama berhasil dikirim!');
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    renderModules();
+  </script>
 </body>
 </html>
