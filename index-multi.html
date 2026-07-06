@@ -104,13 +104,13 @@
   </div>
 
   <script>
-    let ws;
-    let modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
-    let timerIntervals = {};
+    var ws;
+    var modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
+    var timerIntervals = {};
 
     function updateClock() {
-      let now = new Date();
-      let h=now.getHours(); let m=now.getMinutes(); let s=now.getSeconds();
+      var now = new Date();
+      var h=now.getHours(); var m=now.getMinutes(); var s=now.getSeconds();
       document.getElementById('live-clock').innerText = (h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
     }
     setInterval(updateClock, 1000); updateClock();
@@ -120,357 +120,170 @@
       document.getElementById('conn-status').className = 'conn-status ' + (status ? 'conn-on' : 'conn-off');
     }
 
+    function strToBytes(str) {
+      var bytes = [];
+      for (var i = 0; i < str.length; i++) bytes.push(str.charCodeAt(i));
+      return bytes;
+    }
+
+    function mqttSendConnect() {
+      var cid = "web_" + Math.random().toString(16).substr(2, 8);
+      var cidBytes = strToBytes(cid);
+      var p = [0x10, 12 + cidBytes.length, 0, 4, 77, 81, 84, 84, 4, 0x02, 0, 60];
+      for(var i=0; i<cidBytes.length; i++) p.push(cidBytes[i]);
+      ws.send(new Uint8Array(p));
+    }
+
+    function mqttSendSubscribe(topic) {
+      var tBytes = strToBytes(topic);
+      var p = [0x82, 2 + 2 + tBytes.length, 0, 1];
+      p.push((tBytes.length >> 8) & 0xFF);
+      p.push(tBytes.length & 0xFF);
+      for(var i=0; i<tBytes.length; i++) p.push(tBytes[i]);
+      p.push(0);
+      ws.send(new Uint8Array(p));
+    }
+
+    function publishMQTT(topic, payload) {
+      if(!ws || ws.readyState !== 1) return;
+      var tBytes = strToBytes(topic);
+      var pBytes = strToBytes(payload);
+      var p = [0x30, 2 + tBytes.length + pBytes.length];
+      p.push((tBytes.length >> 8) & 0xFF);
+      p.push(tBytes.length & 0xFF);
+      for(var i=0; i<tBytes.length; i++) p.push(tBytes[i]);
+      for(var i=0; i<pBytes.length; i++) p.push(pBytes[i]);
+      ws.send(new Uint8Array(p));
+    }
+
     function connectMQTT() {
       ws = new WebSocket("wss://broker.emqx.io:443/mqtt");
       ws.binaryType = "arraybuffer";
 
       ws.onopen = function() {
-        let clientId = "web_" + Math.random().toString(16).substr(2, 8);
-        let payload = new TextEncoder().encode(clientId);
-        let packet = new Uint8Array(14 + payload.length);
-        packet[0] = 0x10; 
-        packet[1] = 12 + payload.length; 
-        packet[2] = 0; packet[3] = 4; packet[4] = 77; packet[5] = 81; packet[6] = 84; packet[7] = 84; 
-        packet[8] = 4; 
-        packet[9] = 0x02; 
-        packet[10] = 0; packet[11] = 60; 
-        packet.set(payload, 12);
-        ws.send(packet);
-        
+        mqttSendConnect();
         updateConnStatus(true);
-        modules.forEach(mod => {
-          sendSubscribe(mod.topic + '/state');
-          sendSubscribe(mod.topic + '/names');
-          sendSubscribe(mod.topic + '/schedule');
+        modules.forEach(function(mod) {
+          mqttSendSubscribe(mod.topic + '/state');
+          mqttSendSubscribe(mod.topic + '/names');
+          mqttSendSubscribe(mod.topic + '/schedule');
         });
       };
 
       ws.onmessage = function(event) {
-        let data = new Uint8Array(event.data);
+        var data = new Uint8Array(event.data);
         if ((data[0] & 0xF0) === 0x30) {
-          let qos = (data[0] & 0x06) >> 1;
-          let idx = 1;
-          let remainingLength = 0;
-          let multiplier = 1;
-          do {
-            remainingLength += (data[idx] & 127) * multiplier;
-            multiplier *= 128;
-            idx++;
-          } while ((data[idx-1] & 128) !== 0);
-
-          let topicLength = (data[idx] << 8) + data[idx+1];
-          idx += 2;
-          let topic = new TextDecoder().decode(data.slice(idx, idx + topicLength));
-          idx += topicLength;
+          var idx = 1;
+          var remLen = 0, mul = 1;
+          do { remLen += (data[idx] & 127) * mul; mul *= 128; idx++; } while ((data[idx-1] & 128) !== 0);
+          var tLen = (data[idx] << 8) + data[idx+1]; idx += 2;
+          var topic = ""; for(var i=0; i<tLen; i++) topic += String.fromCharCode(data[idx+i]); idx += tLen;
+          if (((data[0] & 0x06) >> 1) > 0) idx += 2;
+          var msg = ""; while(idx < data.length) msg += String.fromCharCode(data[idx++]);
           
-          if (qos > 0) idx += 2; 
-          
-          let msg = new TextDecoder().decode(data.slice(idx));
-          
-          let topicParts = topic.split('/');
-          let baseTopic = topicParts[0] + '/' + topicParts[1]; 
-          let subTopic = topicParts[2];
-
-          if (subTopic === 'state') {
-            try { updateModuleUI(baseTopic, JSON.parse(msg)); } catch(e) {}
-          } else if (subTopic === 'names') {
-            try { updateModuleNames(baseTopic, JSON.parse(msg)); } catch(e) {}
-          } else if (subTopic === 'schedule') {
-            try { updateModuleSchedules(baseTopic, JSON.parse(msg)); } catch(e) {}
-          }
+          var tp = topic.split('/'); var base = tp[0]+'/'+tp[1]; var sub = tp[2];
+          if (sub === 'state') { try { updateModuleUI(base, JSON.parse(msg)); } catch(e) {} }
+          else if (sub === 'names') { try { updateModuleNames(base, JSON.parse(msg)); } catch(e) {} }
+          else if (sub === 'schedule') { try { updateModuleSchedules(base, JSON.parse(msg)); } catch(e) {} }
         }
       };
 
-      ws.onclose = function() {
-        updateConnStatus(false);
-        setTimeout(connectMQTT, 5000); 
-      };
+      ws.onclose = function() { updateConnStatus(false); setTimeout(connectMQTT, 5000); };
       ws.onerror = function() { ws.close(); };
     }
 
-    function sendSubscribe(topic) {
-      let topicBytes = new TextEncoder().encode(topic);
-      let packet = new Uint8Array(5 + 2 + topicBytes.length);
-      packet[0] = 0x82; 
-      packet[1] = 2 + 2 + topicBytes.length;
-      packet[2] = 0; packet[3] = 1; 
-      packet[4] = (topicBytes.length >> 8) & 0xFF;
-      packet[5] = topicBytes.length & 0xFF;
-      packet.set(topicBytes, 6);
-      packet[6 + topicBytes.length] = 0; 
-      if(ws && ws.readyState === 1) ws.send(packet);
-    }
-
-    function publishMQTT(topic, payload) {
-      let topicBytes = new TextEncoder().encode(topic);
-      let payloadBytes = new TextEncoder().encode(payload);
-      let packet = new Uint8Array(2 + 2 + topicBytes.length + payloadBytes.length);
-      packet[0] = 0x30; 
-      packet[1] = 2 + topicBytes.length + payloadBytes.length;
-      packet[2] = (topicBytes.length >> 8) & 0xFF;
-      packet[3] = topicBytes.length & 0xFF;
-      packet.set(topicBytes, 4);
-      packet.set(payloadBytes, 4 + topicBytes.length);
-      if(ws && ws.readyState === 1) ws.send(packet);
-    }
-
     function addModule() {
-      let name = document.getElementById('input-name').value.trim();
-      let topic = document.getElementById('input-topic').value.trim();
+      var name = document.getElementById('input-name').value.trim();
+      var topic = document.getElementById('input-topic').value.trim();
       if (!name || !topic) { alert("Nama dan Topik tidak boleh kosong!"); return; }
       if (modules.find(m => m.topic === topic)) { alert("Modul sudah ada!"); return; }
       modules.push({ id: Date.now().toString(), name: name, topic: topic, states: {}, names: {}, schedules: [] });
       saveAndRender();
-      sendSubscribe(topic + '/state');
-      sendSubscribe(topic + '/names');
-      sendSubscribe(topic + '/schedule');
-      closeModal('modal-add');
-      document.getElementById('input-name').value = '';
-      document.getElementById('input-topic').value = '';
+      mqttSendSubscribe(topic + '/state'); mqttSendSubscribe(topic + '/names'); mqttSendSubscribe(topic + '/schedule');
+      closeModal('modal-add'); document.getElementById('input-name').value = ''; document.getElementById('input-topic').value = '';
     }
 
     function removeModule(id) {
       if(confirm("Hapus modul ini dari tampilan?")) {
-        let mod = modules.find(m => m.id === id);
-        if(mod) {
-          if(timerIntervals[mod.topic]) { clearInterval(timerIntervals[mod.topic]); delete timerIntervals[mod.topic]; }
-        }
-        modules = modules.filter(m => m.id !== id);
-        saveAndRender();
+        var mod = modules.find(m => m.id === id);
+        if(mod && timerIntervals[mod.topic]) { clearInterval(timerIntervals[mod.topic]); delete timerIntervals[mod.topic]; }
+        modules = modules.filter(m => m.id !== id); saveAndRender();
       }
     }
 
-    function saveAndRender() {
-      localStorage.setItem('my_smart_modules_v2', JSON.stringify(modules));
-      renderModules();
-      updateGlobalCounts();
-    }
+    function saveAndRender() { localStorage.setItem('my_smart_modules_v2', JSON.stringify(modules)); renderModules(); updateGlobalCounts(); }
 
     function updateGlobalCounts() {
-      let total = 0, active = 0;
-      modules.forEach(mod => {
-        let keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
-        total += keys.length;
-        keys.forEach(k => { if(mod.states[k] === 1) active++; });
+      var total = 0, active = 0;
+      modules.forEach(function(mod) {
+        var keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
+        total += keys.length; keys.forEach(k => { if(mod.states[k] === 1) active++; });
       });
-      document.getElementById('active-count').innerText = active;
-      document.getElementById('total-count').innerText = total;
+      document.getElementById('active-count').innerText = active; document.getElementById('total-count').innerText = total;
     }
 
     function renderModules() {
-      let container = document.getElementById('module-container');
-      container.innerHTML = '';
-      modules.forEach(mod => {
-        let safeId = mod.topic.replace(/\//g, '-');
-        let keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
-        let count = keys.length;
-
-        let relayOptions = '<option value="0">Semua</option>';
-        keys.forEach(k => { let n = k.replace('s',''); relayOptions += `<option value="${n}">${mod.names['n'+n] || 'Lampu '+n}</option>`; });
-
-        let html = `
-          <div class="module-card" id="card-${safeId}">
-            <div class="module-header">
-              <h2>📦 ${mod.name}</h2>
-              <button class="btn-del-mod" onclick="removeModule('${mod.id}')">HAPUS</button>
-            </div>
-            <div class="module-body">
-              <div class="module-actions">
-                <button class="action-btn btn-allon" onclick="setAll('${mod.topic}', 1)">ALL ON</button>
-                <button class="action-btn btn-alloff" onclick="setAll('${mod.topic}', 0)">ALL OFF</button>
-                <button class="action-btn btn-timer" id="btn-timer-${safeId}" onclick="openTimerModal('${mod.topic}')">TIMER</button>
-              </div>
-              <div id="switches-${safeId}">
-                ${count === 0 ? '<p class="no-data-text">Menunggu data perangkat...</p>' : ''}
-              </div>
-            </div>
-            <div class="acc-header" onclick="toggleAcc('sch-${safeId}')">⏰ Jadwal Otomatis <span id="sch-arrow-${safeId}">▼</span></div>
-            <div class="acc-body" id="sch-${safeId}">
-              <form onsubmit="saveSchedule(event, '${mod.topic}')">
-                <div class="form-group"><label>Relay</label><select id="sch-relay-${safeId}">${relayOptions}</select></div>
-                <div class="form-group"><label>Aksi</label><select id="sch-state-${safeId}"><option value="1">Nyala</option><option value="0">Mati</option></select></div>
-                <div class="form-group"><label>Hari</label><select id="sch-day-${safeId}"><option value="7">Setiap Hari</option><option value="0">Minggu</option><option value="1">Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option></select></div>
-                <div class="form-group"><label>Waktu</label><input type="time" id="sch-time-${safeId}" required></div>
-                <button type="submit" class="btn-submit">TAMBAH JADWAL</button>
-              </form>
-              <div id="schedule-list-${safeId}" style="margin-top:15px;"></div>
-            </div>
-            <div class="acc-header" onclick="toggleAcc('nama-${safeId}')">⚙️ Pengaturan Nama <span id="nama-arrow-${safeId}">▼</span></div>
-            <div class="acc-body" id="nama-${safeId}">
-              <form onsubmit="saveNames(event, '${mod.topic}', '${safeId}')">
-                <div id="name-inputs-${safeId}"></div>
-                <button type="submit" class="btn-submit">SIMPAN NAMA</button>
-              </form>
-            </div>
-          </div>
-        `;
+      var container = document.getElementById('module-container'); container.innerHTML = '';
+      modules.forEach(function(mod) {
+        var safeId = mod.topic.replace(/\//g, '-');
+        var keys = Object.keys(mod.states).filter(k => k.startsWith('s')); var count = keys.length;
+        var relayOptions = '<option value="0">Semua</option>';
+        keys.forEach(function(k) { var n = k.replace('s',''); relayOptions += '<option value="'+n+'">'+(mod.names['n'+n] || 'Lampu '+n)+'</option>'; });
+        var html = '<div class="module-card" id="card-'+safeId+'"><div class="module-header"><h2>📦 '+mod.name+'</h2><button class="btn-del-mod" onclick="removeModule(\''+mod.id+'\')">HAPUS</button></div><div class="module-body"><div class="module-actions"><button class="action-btn btn-allon" onclick="setAll(\''+mod.topic+'\', 1)">ALL ON</button><button class="action-btn btn-alloff" onclick="setAll(\''+mod.topic+'\', 0)">ALL OFF</button><button class="action-btn btn-timer" id="btn-timer-'+safeId+'" onclick="openTimerModal(\''+mod.topic+'\')">TIMER</button></div><div id="switches-'+safeId+'">'+(count === 0 ? '<p class="no-data-text">Menunggu data perangkat...</p>' : '')+'</div></div><div class="acc-header" onclick="toggleAcc(\'sch-'+safeId+'\')">⏰ Jadwal Otomatis <span id="sch-arrow-'+safeId+'">▼</span></div><div class="acc-body" id="sch-'+safeId+'"><form onsubmit="saveSchedule(event, \''+mod.topic+'\')"><div class="form-group"><label>Relay</label><select id="sch-relay-'+safeId+'">'+relayOptions+'</select></div><div class="form-group"><label>Aksi</label><select id="sch-state-'+safeId+'"><option value="1">Nyala</option><option value="0">Mati</option></select></div><div class="form-group"><label>Hari</label><select id="sch-day-'+safeId+'"><option value="7">Setiap Hari</option><option value="0">Minggu</option><option value="1">Senin</option><option value="2">Selasa</option><option value="3">Rabu</option><option value="4">Kamis</option><option value="5">Jumat</option><option value="6">Sabtu</option></select></div><div class="form-group"><label>Waktu</label><input type="time" id="sch-time-'+safeId+'" required></div><button type="submit" class="btn-submit">TAMBAH JADWAL</button></form><div id="schedule-list-'+safeId+'" style="margin-top:15px;"></div></div><div class="acc-header" onclick="toggleAcc(\'nama-'+safeId+'\')">⚙️ Pengaturan Nama <span id="nama-arrow-'+safeId+'">▼</span></div><div class="acc-body" id="nama-'+safeId+'"><form onsubmit="saveNames(event, \''+mod.topic+'\', \''+safeId+'\')"><div id="name-inputs-'+safeId+'"></div><button type="submit" class="btn-submit">SIMPAN NAMA</button></form></div></div>';
         container.innerHTML += html;
-
-        if (count > 0) {
-          updateModuleUI(mod.topic, mod.states);
-          updateModuleNames(mod.topic, mod.names);
-        }
+        if (count > 0) { updateModuleUI(mod.topic, mod.states); updateModuleNames(mod.topic, mod.names); }
         if(mod.schedules.length > 0) updateModuleSchedules(mod.topic, mod.schedules);
       });
     }
 
-    function toggleAcc(id) {
-      let body = document.getElementById(id);
-      let arrowId = id.includes('sch-') ? id.replace('sch-', 'sch-arrow-') : id.replace('nama-', 'nama-arrow-');
-      body.classList.toggle('active');
-      document.getElementById(arrowId).innerText = body.classList.contains('active') ? '▲' : '▼';
-    }
+    function toggleAcc(id) { var body = document.getElementById(id); var arrowId = id.includes('sch-') ? id.replace('sch-', 'sch-arrow-') : id.replace('nama-', 'nama-arrow-'); body.classList.toggle('active'); document.getElementById(arrowId).innerText = body.classList.contains('active') ? '▲' : '▼'; }
 
     function updateModuleUI(topic, data) {
-      let mod = modules.find(m => m.topic === topic);
-      if (!mod) return;
-      let safeId = topic.replace(/\//g, '-');
-      let switchContainer = document.getElementById('switches-' + safeId);
-      if(!switchContainer) return;
-      
-      let keys = Object.keys(data).filter(k => k.startsWith('s'));
-      let count = keys.length;
-      mod.states = data;
-
+      var mod = modules.find(m => m.topic === topic); if (!mod) return;
+      var safeId = topic.replace(/\//g, '-'); var switchContainer = document.getElementById('switches-' + safeId); if(!switchContainer) return;
+      var keys = Object.keys(data).filter(k => k.startsWith('s')); var count = keys.length; mod.states = data;
       if (switchContainer.children.length !== count || switchContainer.querySelector('.no-data-text')) {
-        let html = '';
-        keys.forEach(key => {
-          let chNum = key.replace('s', '');
-          let chName = mod.names['n' + chNum] || ('Lampu ' + chNum);
-          let isOn = data[key] === 1;
-          html += `
-            <div class="switch-row">
-              <div class="switch-info">
-                <h3 id="title-${safeId}-${chNum}">${chName}</h3>
-                <p id="status-${safeId}-${chNum}" style="color: ${isOn ? '#22c55e' : '#94a3b8'}">Status: ${isOn ? 'Nyala' : 'Mati'}</p>
-              </div>
-              <label class="switch">
-                <input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleRelay('${topic}', ${chNum}, this.checked)">
-                <span class="slider"></span>
-              </label>
-            </div>
-          `;
+        var html = '';
+        keys.forEach(function(key) {
+          var chNum = key.replace('s', ''); var chName = mod.names['n' + chNum] || ('Lampu ' + chNum); var isOn = data[key] === 1;
+          html += '<div class="switch-row"><div class="switch-info"><h3 id="title-'+safeId+'-'+chNum+'">'+chName+'</h3><p id="status-'+safeId+'-'+chNum+'" style="color: '+(isOn ? '#22c55e' : '#94a3b8')+'">Status: '+(isOn ? 'Nyala' : 'Mati')+'</p></div><label class="switch"><input type="checkbox" '+(isOn ? 'checked' : '')+' onchange="toggleRelay(\''+topic+'\', '+chNum+', this.checked)"><span class="slider"></span></label></div>';
         });
         switchContainer.innerHTML = html;
-        
-        let nameContainer = document.getElementById('name-inputs-' + safeId);
-        if(nameContainer) {
-          let nameHtml = '';
-          keys.forEach(key => {
-            let chNum = key.replace('s', '');
-            nameHtml += `<div class="form-group"><label>Nama Relay ${chNum}</label><input type="text" id="inp-name-${safeId}-${chNum}" value="${mod.names['n' + chNum] || 'Lampu '+chNum}"></div>`;
-          });
-          nameContainer.innerHTML = nameHtml;
-        }
+        var nameContainer = document.getElementById('name-inputs-' + safeId); if(nameContainer) { var nameHtml = ''; keys.forEach(function(key) { var chNum = key.replace('s', ''); nameHtml += '<div class="form-group"><label>Nama Relay '+chNum+'</label><input type="text" id="inp-name-'+safeId+'-'+chNum+'" value="'+(mod.names['n' + chNum] || 'Lampu '+chNum)+'"></div>'; }); nameContainer.innerHTML = nameHtml; }
       } else {
-        keys.forEach(key => {
-          let chNum = key.replace('s', '');
-          let isOn = data[key] === 1;
-          let row = switchContainer.querySelector(`#status-${safeId}-${chNum}`);
-          if(row) { row.innerText = 'Status: ' + (isOn ? 'Nyala' : 'Mati'); row.style.color = isOn ? '#22c55e' : '#94a3b8'; }
-          let checkbox = switchContainer.querySelector(`input[type=checkbox][onchange*="'${topic}', ${chNum}"]`);
-          if(checkbox) checkbox.checked = isOn;
-        });
+        keys.forEach(function(key) { var chNum = key.replace('s', ''); var isOn = data[key] === 1; var row = switchContainer.querySelector('#status-'+safeId+'-'+chNum); if(row) { row.innerText = 'Status: ' + (isOn ? 'Nyala' : 'Mati'); row.style.color = isOn ? '#22c55e' : '#94a3b8'; } var checkbox = switchContainer.querySelector('input[type=checkbox][onchange*="'+topic+', '+chNum+'"]'); if(checkbox) checkbox.checked = isOn; });
       }
       updateGlobalCounts();
     }
 
     function updateModuleNames(topic, data) {
-      let mod = modules.find(m => m.topic === topic);
-      if (!mod) return;
-      mod.names = data;
-      let safeId = topic.replace(/\//g, '-');
-      Object.keys(data).forEach(key => {
-        let chNum = key.replace('n', '');
-        let titleEl = document.getElementById(`title-${safeId}-${chNum}`);
-        if (titleEl) titleEl.innerText = data[key];
-        let inpEl = document.getElementById(`inp-name-${safeId}-${chNum}`);
-        if (inpEl) inpEl.value = data[key];
-      });
+      var mod = modules.find(m => m.topic === topic); if (!mod) return; mod.names = data; var safeId = topic.replace(/\//g, '-');
+      Object.keys(data).forEach(function(key) { var chNum = key.replace('n', ''); var titleEl = document.getElementById('title-'+safeId+'-'+chNum); if (titleEl) titleEl.innerText = data[key]; var inpEl = document.getElementById('inp-name-'+safeId+'-'+chNum); if (inpEl) inpEl.value = data[key]; });
     }
 
     function updateModuleSchedules(topic, data) {
-      let mod = modules.find(m => m.topic === topic);
-      if (!mod) return;
-      mod.schedules = data;
-      let safeId = topic.replace(/\//g, '-');
-      let list = document.getElementById('schedule-list-' + safeId);
-      if(!list) return;
-      let days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Setiap Hari'];
-      
+      var mod = modules.find(m => m.topic === topic); if (!mod) return; mod.schedules = data; var safeId = topic.replace(/\//g, '-'); var list = document.getElementById('schedule-list-' + safeId); if(!list) return; var days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Setiap Hari'];
       if(!data || data.length === 0) { list.innerHTML = '<p class="no-data-text">Belum ada jadwal.</p>'; return; }
-      
-      let html = '';
-      data.forEach(s => {
-        let rn = s.relay == 0 ? 'Semua' : 'Relay ' + s.relay;
-        let sn = s.state == 1 ? 'NYALA' : 'MATI';
-        let sc = s.state == 1 ? '#22c55e' : '#ef4444';
-        let ts = (s.hour<10?'0':'')+s.hour+':'+(s.minute<10?'0':'')+s.minute;
-        html += `<div class="schedule-item"><div><div class="sch-time">${days[s.day]} ${ts}</div><div style="color:#94a3b8">${rn} <span style="color:${sc};font-weight:bold">${sn}</span></div></div><button class="btn-del" onclick="delSchedule('${topic}', ${s.id})">HAPUS</button></div>`;
-      });
-      list.innerHTML = html;
+      var html = ''; data.forEach(function(s) { var rn = s.relay == 0 ? 'Semua' : 'Relay ' + s.relay; var sn = s.state == 1 ? 'NYALA' : 'MATI'; var sc = s.state == 1 ? '#22c55e' : '#ef4444'; var ts = (s.hour<10?'0':'')+s.hour+':'+(s.minute<10?'0':'')+s.minute; html += '<div class="schedule-item"><div><div class="sch-time">'+days[s.day]+' '+ts+'</div><div style="color:#94a3b8">'+rn+' <span style="color:'+sc+';font-weight:bold">'+sn+'</span></div></div><button class="btn-del" onclick="delSchedule(\''+topic+'\', '+s.id+')">HAPUS</button></div>'; }); list.innerHTML = html;
     }
 
     function toggleRelay(topic, ch, state) { publishMQTT(topic + '/cmd', 'r' + ch + '=' + (state ? 1 : 0)); }
     function setAll(topic, state) { publishMQTT(topic + '/cmd', 'all=' + state); }
-
-    function openTimerModal(topic) {
-      document.getElementById('timer-topic').value = topic;
-      document.getElementById('timer-input').value = '';
-      openModal('modal-timer');
-    }
+    function openTimerModal(topic) { document.getElementById('timer-topic').value = topic; document.getElementById('timer-input').value = ''; openModal('modal-timer'); }
 
     function submitTimer() {
-      let topic = document.getElementById('timer-topic').value;
-      let mins = parseInt(document.getElementById('timer-input').value);
-      if (!isNaN(mins) && mins > 0) {
-        closeModal('modal-timer');
-        publishMQTT(topic + '/cmd', 'timer=' + mins);
-        let safeId = topic.replace(/\//g, '-');
-        let timerBtn = document.getElementById('btn-timer-' + safeId);
-        let remainingSeconds = mins * 60;
-        
-        if(timerIntervals[topic]) clearInterval(timerIntervals[topic]);
-        timerIntervals[topic] = setInterval(function() {
-          remainingSeconds--;
-          if (remainingSeconds <= 0) { 
-            clearInterval(timerIntervals[topic]); 
-            delete timerIntervals[topic];
-            if(timerBtn) { timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = ''; } 
-          } else { 
-            let m = Math.floor(remainingSeconds / 60); let s = remainingSeconds % 60; 
-            if(timerBtn) { timerBtn.innerText = (m<10?'0':'')+m+':'+(s<10?'0':'')+s; timerBtn.style.backgroundColor = '#f97316'; } 
-          }
-        }, 1000);
-      }
+      var topic = document.getElementById('timer-topic').value; var mins = parseInt(document.getElementById('timer-input').value);
+      if (!isNaN(mins) && mins > 0) { closeModal('modal-timer'); publishMQTT(topic + '/cmd', 'timer=' + mins); var safeId = topic.replace(/\//g, '-'); var timerBtn = document.getElementById('btn-timer-' + safeId); var remainingSeconds = mins * 60; if(timerIntervals[topic]) clearInterval(timerIntervals[topic]); timerIntervals[topic] = setInterval(function() { remainingSeconds--; if (remainingSeconds <= 0) { clearInterval(timerIntervals[topic]); delete timerIntervals[topic]; if(timerBtn) { timerBtn.innerText = 'TIMER'; timerBtn.style.backgroundColor = ''; } } else { var m = Math.floor(remainingSeconds / 60); var s = remainingSeconds % 60; if(timerBtn) { timerBtn.innerText = (m<10?'0':'')+m+':'+(s<10?'0':'')+s; timerBtn.style.backgroundColor = '#f97316'; } } }, 1000); }
     }
 
     function saveSchedule(event, topic) {
-      event.preventDefault();
-      let safeId = topic.replace(/\//g, '-');
-      let r = document.getElementById('sch-relay-'+safeId).value;
-      let s = document.getElementById('sch-state-'+safeId).value;
-      let d = document.getElementById('sch-day-'+safeId).value;
-      let t = document.getElementById('sch-time-'+safeId).value;
-      if(!t) return;
-      let p = t.split(':');
-      publishMQTT(topic + '/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]);
-      document.getElementById('sch-time-'+safeId).value = '';
+      event.preventDefault(); var safeId = topic.replace(/\//g, '-'); var r = document.getElementById('sch-relay-'+safeId).value; var s = document.getElementById('sch-state-'+safeId).value; var d = document.getElementById('sch-day-'+safeId).value; var t = document.getElementById('sch-time-'+safeId).value; if(!t) return; var p = t.split(':'); publishMQTT(topic + '/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]); document.getElementById('sch-time-'+safeId).value = '';
     }
-
     function delSchedule(topic, id) { publishMQTT(topic + '/sch_cmd', 'del:'+id); }
 
     function saveNames(event, topic, safeId) {
-      event.preventDefault();
-      let mod = modules.find(m => m.topic === topic);
-      if(!mod) return;
-      let keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
-      keys.forEach(key => {
-        let chNum = key.replace('s', '');
-        let inpEl = document.getElementById(`inp-name-${safeId}-${chNum}`);
-        if(inpEl) publishMQTT(topic + '/name_cmd', 'set:' + chNum + ':' + inpEl.value);
-      });
-      alert('Nama berhasil dikirim!');
+      event.preventDefault(); var mod = modules.find(m => m.topic === topic); if(!mod) return; var keys = Object.keys(mod.states).filter(k => k.startsWith('s'));
+      keys.forEach(function(key) { var chNum = key.replace('s', ''); var inpEl = document.getElementById('inp-name-'+safeId+'-'+chNum); if(inpEl) publishMQTT(topic + '/name_cmd', 'set:' + chNum + ':' + inpEl.value); }); alert('Nama berhasil dikirim!');
     }
 
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
