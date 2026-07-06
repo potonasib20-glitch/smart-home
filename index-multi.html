@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Home Pro</title>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     :root { --bg-color: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8; --accent-on: #22c55e; --accent-off: #475569; --accent-glow: #16a34a; --danger: #ef4444; --border: #334155; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -105,10 +104,9 @@
   </div>
 
   <script>
-    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
-    let client = mqtt.connect(BROKER_URL, { clientId: 'web_pro_' + Math.random().toString(16).substr(2, 8), clean: true });
     let modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
     let timerIntervals = {};
+    let lastAppMsg = "";
 
     function updateClock() {
       let now = new Date();
@@ -117,38 +115,38 @@
     }
     setInterval(updateClock, 1000); updateClock();
 
-    client.on('connect', function () {
-      document.getElementById('conn-status').innerHTML = 'MQTT: CONNECTED';
-      document.getElementById('conn-status').className = 'conn-status conn-on';
-      modules.forEach(mod => {
-        client.subscribe(mod.topic + '/state');
-        client.subscribe(mod.topic + '/names');
-        client.subscribe(mod.topic + '/schedule');
-      });
-    });
-
-    client.on('error', function () { updateConnStatus(false); });
-    client.on('close', function () { updateConnStatus(false); });
-
-    function updateConnStatus(status) {
-      document.getElementById('conn-status').innerHTML = status ? 'MQTT: CONNECTED' : 'MQTT: DISCONNECTED';
-      document.getElementById('conn-status').className = 'conn-status ' + (status ? 'conn-on' : 'conn-off');
+    function sendToApp(action, topic, payload) {
+      window.AppInventor.setWebViewString(JSON.stringify({ action: action, topic: topic, payload: payload }));
     }
 
-    client.on('message', function (topic, message) {
-      let msg = message.toString();
-      let topicParts = topic.split('/');
-      let baseTopic = topicParts[0] + '/' + topicParts[1]; 
-      let subTopic = topicParts[2];
-
-      if (subTopic === 'state') {
-        try { updateModuleUI(baseTopic, JSON.parse(msg)); } catch(e) {}
-      } else if (subTopic === 'names') {
-        try { updateModuleNames(baseTopic, JSON.parse(msg)); } catch(e) {}
-      } else if (subTopic === 'schedule') {
-        try { updateModuleSchedules(baseTopic, JSON.parse(msg)); } catch(e) {}
+    setInterval(function() {
+      let msg = window.AppInventor.getWebViewString();
+      if (msg !== lastAppMsg && msg !== "") {
+        lastAppMsg = msg;
+        try {
+          let data = JSON.parse(msg);
+          if (data.type === "conn") {
+            document.getElementById('conn-status').innerHTML = data.status === "connected" ? 'MQTT: CONNECTED' : 'MQTT: DISCONNECTED';
+            document.getElementById('conn-status').className = 'conn-status ' + (data.status === "connected" ? 'conn-on' : 'conn-off');
+          } else if (data.type === "mqtt") {
+            let topicParts = data.topic.split('/');
+            let baseTopic = topicParts[0] + '/' + topicParts[1]; 
+            let subTopic = topicParts[2];
+            if (subTopic === 'state') { try { updateModuleUI(baseTopic, JSON.parse(data.payload)); } catch(e) {} }
+            else if (subTopic === 'names') { try { updateModuleNames(baseTopic, JSON.parse(data.payload)); } catch(e) {} }
+            else if (subTopic === 'schedule') { try { updateModuleSchedules(baseTopic, JSON.parse(data.payload)); } catch(e) {} }
+          }
+        } catch (e) {}
       }
-    });
+    }, 200);
+
+    function connectMQTT() {
+      modules.forEach(mod => {
+        sendToApp("subscribe", mod.topic + '/state', "");
+        sendToApp("subscribe", mod.topic + '/names', "");
+        sendToApp("subscribe", mod.topic + '/schedule', "");
+      });
+    }
 
     function addModule() {
       let name = document.getElementById('input-name').value.trim();
@@ -157,9 +155,9 @@
       if (modules.find(m => m.topic === topic)) { alert("Modul sudah ada!"); return; }
       modules.push({ id: Date.now().toString(), name: name, topic: topic, states: {}, names: {}, schedules: [] });
       saveAndRender();
-      client.subscribe(topic + '/state');
-      client.subscribe(topic + '/names');
-      client.subscribe(topic + '/schedule');
+      sendToApp("subscribe", topic + '/state', "");
+      sendToApp("subscribe", topic + '/names', "");
+      sendToApp("subscribe", topic + '/schedule', "");
       closeModal('modal-add');
       document.getElementById('input-name').value = '';
       document.getElementById('input-topic').value = '';
@@ -169,9 +167,9 @@
       if(confirm("Hapus modul ini dari tampilan?")) {
         let mod = modules.find(m => m.id === id);
         if(mod) {
-          client.unsubscribe(mod.topic + '/state');
-          client.unsubscribe(mod.topic + '/names');
-          client.unsubscribe(mod.topic + '/schedule');
+          sendToApp("unsubscribe", mod.topic + '/state', "");
+          sendToApp("unsubscribe", mod.topic + '/names', "");
+          sendToApp("unsubscribe", mod.topic + '/schedule', "");
           if(timerIntervals[mod.topic]) { clearInterval(timerIntervals[mod.topic]); delete timerIntervals[mod.topic]; }
         }
         modules = modules.filter(m => m.id !== id);
@@ -350,8 +348,8 @@
       list.innerHTML = html;
     }
 
-    function toggleRelay(topic, ch, state) { client.publish(topic + '/cmd', 'r' + ch + '=' + (state ? 1 : 0)); }
-    function setAll(topic, state) { client.publish(topic + '/cmd', 'all=' + state); }
+    function toggleRelay(topic, ch, state) { sendToApp("publish", topic + '/cmd', 'r' + ch + '=' + (state ? 1 : 0)); }
+    function setAll(topic, state) { sendToApp("publish", topic + '/cmd', 'all=' + state); }
 
     function openTimerModal(topic) {
       document.getElementById('timer-topic').value = topic;
@@ -364,7 +362,7 @@
       let mins = parseInt(document.getElementById('timer-input').value);
       if (!isNaN(mins) && mins > 0) {
         closeModal('modal-timer');
-        client.publish(topic + '/cmd', 'timer=' + mins);
+        sendToApp("publish", topic + '/cmd', 'timer=' + mins);
         let safeId = topic.replace(/\//g, '-');
         let timerBtn = document.getElementById('btn-timer-' + safeId);
         let remainingSeconds = mins * 60;
@@ -393,11 +391,11 @@
       let t = document.getElementById('sch-time-'+safeId).value;
       if(!t) return;
       let p = t.split(':');
-      client.publish(topic + '/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]);
+      sendToApp("publish", topic + '/sch_cmd', 'add:'+r+':'+s+':'+d+':'+p[0]+':'+p[1]);
       document.getElementById('sch-time-'+safeId).value = '';
     }
 
-    function delSchedule(topic, id) { client.publish(topic + '/sch_cmd', 'del:'+id); }
+    function delSchedule(topic, id) { sendToApp("publish", topic + '/sch_cmd', 'del:'+id); }
 
     function saveNames(event, topic, safeId) {
       event.preventDefault();
@@ -407,7 +405,7 @@
       keys.forEach(key => {
         let chNum = key.replace('s', '');
         let inpEl = document.getElementById(`inp-name-${safeId}-${chNum}`);
-        if(inpEl) client.publish(topic + '/name_cmd', 'set:' + chNum + ':' + inpEl.value);
+        if(inpEl) sendToApp("publish", topic + '/name_cmd', 'set:' + chNum + ':' + inpEl.value);
       });
       alert('Nama berhasil dikirim!');
     }
@@ -415,7 +413,10 @@
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-    renderModules();
+    window.onload = function() {
+      renderModules();
+      connectMQTT();
+    };
   </script>
 </body>
 </html>
