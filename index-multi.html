@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Home Pro</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
   <style>
     :root { --bg-color: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8; --accent-on: #22c55e; --accent-off: #475569; --accent-glow: #16a34a; --danger: #ef4444; --border: #334155; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -105,7 +104,7 @@
   </div>
 
   <script>
-   let client = new Paho.MQTT.Client("broker.emqx.io", 443, "/mqtt", "web_" + Math.random().toString(16).substr(2, 8));
+    let ws;
     let modules = JSON.parse(localStorage.getItem('my_smart_modules_v2')) || [];
     let timerIntervals = {};
 
@@ -121,41 +120,98 @@
       document.getElementById('conn-status').className = 'conn-status ' + (status ? 'conn-on' : 'conn-off');
     }
 
-    client.onConnectionLost = function () { updateConnStatus(false); };
+    function connectMQTT() {
+      ws = new WebSocket("wss://broker.emqx.io:443/mqtt");
+      ws.binaryType = "arraybuffer";
 
-    client.onMessageArrived = function (message) {
-      let topicParts = message.destinationName.split('/');
-      let baseTopic = topicParts[0] + '/' + topicParts[1]; 
-      let subTopic = topicParts[2];
-
-      if (subTopic === 'state') {
-        try { updateModuleUI(baseTopic, JSON.parse(message.payloadString)); } catch(e) {}
-      } else if (subTopic === 'names') {
-        try { updateModuleNames(baseTopic, JSON.parse(message.payloadString)); } catch(e) {}
-      } else if (subTopic === 'schedule') {
-        try { updateModuleSchedules(baseTopic, JSON.parse(message.payloadString)); } catch(e) {}
-      }
-    };
-
-    client.connect({ 
-      useSSL: true, 
-      onSuccess: function() {
+      ws.onopen = function() {
+        let clientId = "web_" + Math.random().toString(16).substr(2, 8);
+        let payload = new TextEncoder().encode(clientId);
+        let packet = new Uint8Array(14 + payload.length);
+        packet[0] = 0x10; 
+        packet[1] = 12 + payload.length; 
+        packet[2] = 0; packet[3] = 4; packet[4] = 77; packet[5] = 81; packet[6] = 84; packet[7] = 84; 
+        packet[8] = 4; 
+        packet[9] = 0x02; 
+        packet[10] = 0; packet[11] = 60; 
+        packet.set(payload, 12);
+        ws.send(packet);
+        
         updateConnStatus(true);
         modules.forEach(mod => {
-          client.subscribe(mod.topic + '/state');
-          client.subscribe(mod.topic + '/names');
-          client.subscribe(mod.topic + '/schedule');
+          sendSubscribe(mod.topic + '/state');
+          sendSubscribe(mod.topic + '/names');
+          sendSubscribe(mod.topic + '/schedule');
         });
-      }, 
-      onFailure: function() { 
+      };
+
+      ws.onmessage = function(event) {
+        let data = new Uint8Array(event.data);
+        if ((data[0] & 0xF0) === 0x30) {
+          let qos = (data[0] & 0x06) >> 1;
+          let idx = 1;
+          let remainingLength = 0;
+          let multiplier = 1;
+          do {
+            remainingLength += (data[idx] & 127) * multiplier;
+            multiplier *= 128;
+            idx++;
+          } while ((data[idx-1] & 128) !== 0);
+
+          let topicLength = (data[idx] << 8) + data[idx+1];
+          idx += 2;
+          let topic = new TextDecoder().decode(data.slice(idx, idx + topicLength));
+          idx += topicLength;
+          
+          if (qos > 0) idx += 2; 
+          
+          let msg = new TextDecoder().decode(data.slice(idx));
+          
+          let topicParts = topic.split('/');
+          let baseTopic = topicParts[0] + '/' + topicParts[1]; 
+          let subTopic = topicParts[2];
+
+          if (subTopic === 'state') {
+            try { updateModuleUI(baseTopic, JSON.parse(msg)); } catch(e) {}
+          } else if (subTopic === 'names') {
+            try { updateModuleNames(baseTopic, JSON.parse(msg)); } catch(e) {}
+          } else if (subTopic === 'schedule') {
+            try { updateModuleSchedules(baseTopic, JSON.parse(msg)); } catch(e) {}
+          }
+        }
+      };
+
+      ws.onclose = function() {
         updateConnStatus(false);
-      }
-    });
+        setTimeout(connectMQTT, 5000); 
+      };
+      ws.onerror = function() { ws.close(); };
+    }
+
+    function sendSubscribe(topic) {
+      let topicBytes = new TextEncoder().encode(topic);
+      let packet = new Uint8Array(5 + 2 + topicBytes.length);
+      packet[0] = 0x82; 
+      packet[1] = 2 + 2 + topicBytes.length;
+      packet[2] = 0; packet[3] = 1; 
+      packet[4] = (topicBytes.length >> 8) & 0xFF;
+      packet[5] = topicBytes.length & 0xFF;
+      packet.set(topicBytes, 6);
+      packet[6 + topicBytes.length] = 0; 
+      if(ws && ws.readyState === 1) ws.send(packet);
+    }
 
     function publishMQTT(topic, payload) {
-      let msg = new Paho.MQTT.Message(payload);
-      msg.destinationName = topic;
-      client.send(msg);
+      let topicBytes = new TextEncoder().encode(topic);
+      let payloadBytes = new TextEncoder().encode(payload);
+      let packet = new Uint8Array(2 + 2 + topicBytes.length + payloadBytes.length);
+      packet[0] = 0x30; 
+      packet[1] = 2 + topicBytes.length + payloadBytes.length;
+      packet[2] = (topicBytes.length >> 8) & 0xFF;
+      packet[3] = topicBytes.length & 0xFF;
+      packet.set(topicBytes, 4);
+      packet.set(payloadBytes, 4 + topicBytes.length);
+      if(ws && ws.readyState === 1) ws.send(packet);
     }
 
     function addModule() {
@@ -165,9 +221,9 @@
       if (modules.find(m => m.topic === topic)) { alert("Modul sudah ada!"); return; }
       modules.push({ id: Date.now().toString(), name: name, topic: topic, states: {}, names: {}, schedules: [] });
       saveAndRender();
-      client.subscribe(topic + '/state');
-      client.subscribe(topic + '/names');
-      client.subscribe(topic + '/schedule');
+      sendSubscribe(topic + '/state');
+      sendSubscribe(topic + '/names');
+      sendSubscribe(topic + '/schedule');
       closeModal('modal-add');
       document.getElementById('input-name').value = '';
       document.getElementById('input-topic').value = '';
@@ -177,9 +233,6 @@
       if(confirm("Hapus modul ini dari tampilan?")) {
         let mod = modules.find(m => m.id === id);
         if(mod) {
-          client.unsubscribe(mod.topic + '/state');
-          client.unsubscribe(mod.topic + '/names');
-          client.unsubscribe(mod.topic + '/schedule');
           if(timerIntervals[mod.topic]) { clearInterval(timerIntervals[mod.topic]); delete timerIntervals[mod.topic]; }
         }
         modules = modules.filter(m => m.id !== id);
@@ -423,6 +476,7 @@
     function openModal(id) { document.getElementById(id).style.display = 'flex'; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
+    connectMQTT();
     renderModules();
   </script>
 </body>
